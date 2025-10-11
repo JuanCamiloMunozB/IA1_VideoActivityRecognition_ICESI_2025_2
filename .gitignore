@@ -1,0 +1,9 @@
+# Evita subir datos, entornos y tokens
+**/__pycache__/
+*.env
+*.pyc
+.idea/
+.vscode/
+.DS_Store
+.venv/
+venv/

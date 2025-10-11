@@ -1,0 +1,7 @@
+psycopg2-binary
+python-dotenv
+mediapipe
+opencv-python
+pandas
+pydrive2
+numpy

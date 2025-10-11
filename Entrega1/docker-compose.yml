@@ -1,0 +1,28 @@
+services:
+  db:
+    image: postgres:16
+    container_name: ai1_db
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-aiuser}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ai123}
+      POSTGRES_DB: ${POSTGRES_DB:-ai1db}
+    ports:
+      - "5434:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ../sources/scriptDDL.sql:/docker-entrypoint-initdb.d/scriptDDL.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aiuser -d ai1db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  adminer:
+    image: adminer
+    restart: always
+    ports:
+      - "8080:8080"
+
+volumes:
+  postgres_data:
