@@ -5,3 +5,4 @@ opencv-python
 pandas
 pydrive2
 numpy
+supabase==2.*
