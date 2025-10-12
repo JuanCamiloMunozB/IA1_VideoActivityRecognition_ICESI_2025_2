@@ -1,83 +1,144 @@
-____________________________________________________________________________________
+# Sistema de Anotación y Clasificación de Actividad Humana
 
+Este proyecto es parte del curso **Inteligencia Artificial 1** de la carrera Ingenieria de Sistemas, Universidad Icesi, Cali Colombia.
 
-# Project Template
-This is the template for the Project I course at the IA Master, Universidad Icesi, Cali Colombia
-
-This template is based on the template proposed by the [Data Science Working Group] (https://github.com/sfbrigade/data-science-wg) Code for the [San Francisco’s Code initiative](https://github.com/sfbrigade/data-science-wg) 
-
-*Instructions: Edit this template filling in the titles, information, and links! Feel free to stray a bit to suit your project but try to provide the main information for reviews and feedback purposes.*
-## Remove this table after updating your project's information
-____________________________________________________________________________________
-
-# Project Name
-This project is a part of the  **Proyecto 1 de Innovación Tecnológica** course in the Applied Artificial Intelligence Master, Universidad Icesi, Cali Colombia. 
-
-#### -- Project Status: [Active, On-Hold, Completed]
+#### -- Project Status: Active
 
 ## Contributing Members
 
-**Team Leader: [Full Name](https://github.com/[github handle])(@slackHandle)**
-**Instructor: [Full Name](https://github.com/[github handle])(@slackHandle)**
+**Team Leader: [Manuel Cardona](https://github.com/JManuel2004)**
+**Instructor: [Milton Orlando Sarria Paja](https://github.com/miltonsarria)**
 
 #### Other Members:
 
-|Name     |  Email   | 
-|---------|-----------------|
-|[Full Name](https://github.com/[github handle])| @johnDoe        |
-|[Full Name](https://github.com/[github handle]) |     @janeDoe    |
+| Name                                                     |
+| -------------------------------------------------------- |
+| [Manuel Cardona](https://github.com/JManuel2004)         |
+| [Andres Bueno](https://github.com/AndresBueno420)        |
+| [Julio Antonio Prado](https://github.com/jul1097)        |
+| [Martín Gómez](https://github.com/Electromayonaise)      |
+| [Juan Camilo Muñoz](https://github.com/JuanCamiloMunozB) |
 
 ## Contact
-* Feel free to contact the team leader or the instructor with any questions or if you are interested in contributing!
 
+- Feel free to contact the team leader with any questions or if you are interested in contributing!
 
 ## Project Intro/Objective
-The purpose of this project is ________. (Describe the main goals of the project and potential civic impact. Limit to a short paragraph, 3-6 Sentences)
 
-### Partner
-This section should be added when there's a partner institution 
-* [Name of Partner organization/Government department etc..]
-* Website for partner
-* Partner contact: [Name of Contact], [slack handle of contact if any]
-* If you do not have a partner leave this section out
+El propósito de este proyecto es desarrollar una herramienta de software capaz de analizar actividades específicas de una persona (caminar hacia la cámara, caminar de regreso, girar, sentarse, ponerse de pie) y realizar un seguimiento de movimientos articulares y posturales en tiempo real. El sistema utiliza MediaPipe para extraer landmarks corporales de video y emplea técnicas de aprendizaje automático supervisado para clasificar actividades con alta precisión. Esta solución tiene aplicaciones potenciales en salud digital, análisis deportivo, fisioterapia y sistemas de monitoreo de actividad física, contribuyendo al avance del reconocimiento de actividad humana (HAR) mediante tecnologías accesibles y eficientes.
 
 ### Methods Used
-* Inferential Statistics
-* Machine Learning
-* Data Visualization
-* Predictive Modeling
-* etc.
+
+- Computer Vision (MediaPipe Pose Detection)
+- Supervised Machine Learning
+- Time Series Analysis
+- Feature Engineering
+- Data Visualization
+- Multiclass Classification
+- Hyperparameter Tuning
 
 ### Technologies
-* R 
-* Python
-* D3
-* PostGres, MySql
-* Pandas, jupyter
-* HTML
-* JavaScript
-* etc. 
+
+- Python
+- MediaPipe
+- OpenCV
+- Scikit-learn
+- XGBoost
+- Pandas, NumPy
+- Matplotlib, Seaborn
+- Jupyter Notebooks
+- PostgreSQL (Supabase)
+- Git/GitHub
 
 ## Project Description
-(Provide a more detailed overview of the project.  Talk a bit about your data sources and what questions and hypotheses you are exploring. What specific data analysis/visualization and modeling work are you using to solve the problem? What blockers and challenges are you facing?  Feel free to number or bullet point things here)
+
+Este proyecto implementa un sistema completo de reconocimiento de actividad humana que abarca desde la recolección de datos hasta el despliegue de una interfaz funcional. El sistema se basa en el análisis de landmarks corporales extraídos mediante MediaPipe Pose para clasificar cuatro actividades fundamentales: caminar, girar, sentarse y ponerse de pie.
+
+**Fuentes de Datos:** Los datos primarios consisten en videos capturados por los integrantes del grupo usando cámaras de smartphones bajo condiciones controladas (fondos blancos, iluminación uniforme) con variaciones deliberadas en ángulos y perspectivas. Cada video tiene una duración máxima de 5 segundos y se procesan hasta 150 frames por video para extraer los 33 landmarks corporales estándar de MediaPipe.
+
+**Preguntas de Investigación:**
+
+- ¿Es posible alcanzar un F1-Score superior al 85% utilizando exclusivamente landmarks corporales?
+- ¿Qué características derivadas (ángulos, velocidades, distancias) son más discriminativas?
+- ¿Cómo se degrada el rendimiento bajo condiciones variables de iluminación y perspectiva?
+
+**Metodología Técnica:** Se emplea el framework CRISP-DM adaptado a tres entregas del curso. La primera fase incluye análisis exploratorio de datos y establecimiento de baseline. La segunda fase implementa ingeniería de características avanzada (cálculo de ángulos articulares, velocidades temporales, métricas posturales) y entrenamiento de múltiples modelos (SVM, Random Forest, XGBoost) con validación cruzada y ajuste de hiperparámetros. La fase final optimiza el modelo mediante reducción de características y despliega una interfaz en tiempo real.
+
+**Desafíos Principales:** La limitada diversidad demográfica del dataset inicial, la necesidad de generalización a diferentes condiciones ambientales, y la optimización para procesamiento en tiempo real manteniendo alta precisión predictiva.
 
 ## Getting Started
-Instructions for contributors
-1. Clone this repo (for help see this [tutorial](https://help.github.com/articles/cloning-a-repository/)).
-2. Raw Data is being kept [here](Repo folder containing raw data) within this repo.
 
-    *If using offline data mention that and how contributors may obtain the data )*
-    
-3. Data processing/transformation scripts are being kept [here](Repo folder containing data processing scripts/notebooks)
-4. etc...
+### Prerequisites
 
-*If your project is well underway and setup is fairly complicated (ie. requires installation of many packages) create another "setup.md" file and link to it here*  
+- Python 3.8+
+- PostgreSQL database (Supabase account)
+- Webcam or smartphone for video recording
 
-5. Follow setup [instructions](Link to file)
+### Installation
+
+1. Clone this repository:
+
+   ```bash
+   git clone https://github.com/JuanCamiloMunozB/IA1_VideoActivityRecognition_ICESI_2025_2.git
+   cd IA1_VideoActivityRecognition_ICESI_2025_2
+   ```
+
+2. Create and activate virtual environment:
+
+   ```bash
+   python -m venv venv
+   # Windows
+   venv\Scripts\activate
+   # Linux/Mac
+   source venv/bin/activate
+   ```
+
+3. Install dependencies:
+
+   ```bash
+   cd Entrega1
+   pip install -r requirements.txt
+   ```
+
+4. Setup environment variables:
+
+   - Create `.env` file in `Entrega1/` directory
+   - Add Supabase credentials and configuration (see `Entrega1/README.md` for details)
+
+5. Setup database:
+   - Execute SQL script: `sources/scriptDDL.sql` in your Supabase instance
+
+### Usage
+
+1. **Data Collection**: Place videos in organized folders under `videos/` directory
+2. **Data Processing**: Run `Entrega1/src/load_video_info_to_supabase.py`
+3. **Analysis**: Open and run notebooks in `Entrega1/notebooks/`
+
+For detailed setup instructions, see [Entrega1/README.md](Entrega1/README.md)
 
 ## Featured Notebooks/Analysis/Deliverables
-* [Notebook/Markdown/Slide Deck Title](link)
-* [Notebook/Markdown/Slide DeckTitle](link)
-* [Blog Post](link)
 
+### Entrega 1 (Semana 12)
 
+- [Informe Técnico - Entrega 1](Entrega1/docs/informe.md) - Definición del proyecto, metodología y recolección de datos
+- [EDA Videos Notebook](Entrega1/notebooks/EDA_videos.ipynb) - Análisis exploratorio de datos de landmarks
+- [Scripts de Procesamiento](Entrega1/src/) - Extracción de metadatos y landmarks con MediaPipe
+- [Database Schema](sources/scriptDDL.sql) - Esquema de base de datos para almacenamiento
+
+### Próximas Entregas
+
+- **Entrega 2 (Semana 14)**: Modelado, entrenamiento y evaluación de algoritmos ML
+- **Entrega 3 (Semana 17)**: Optimización, despliegue e interfaz en tiempo real
+
+## Project Structure
+
+```
+IA1_VideoActivityRecognition_ICESI_2025_2/
+├── Entrega1/                   # Primera entrega del proyecto
+│   ├── docs/                   # Documentación e informes
+│   ├── notebooks/              # Jupyter notebooks para análisis
+│   ├── src/                    # Scripts de procesamiento
+│   └── requirements.txt        # Dependencias Python
+├── sources/                    # Recursos adicionales (SQL, etc.)
+└── README.md                   # Este archivo
+```
