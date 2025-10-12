@@ -5,7 +5,7 @@
 # .env:
 #   SUPABASE_URL=https://xxxxx.supabase.co
 #   SUPABASE_ANON_KEY=eyJhbGciOi...
-#   VIDEOS_DIR=./videos
+#   VIDEOS_DIR=../../videos
 #   MAX_SAMPLES=60
 #   SAMPLE_STRIDE_SEC=0
 #   INSERT_LANDMARKS=1
@@ -20,13 +20,13 @@ from supabase import create_client, Client
 import cv2
 import numpy as np
 import math
-from mediapipe_extract import extract_landmarks  # ✅ import correcto
+from mediapipe_extract import extract_landmarks 
 
 load_dotenv()
 
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY")
-VIDEOS_DIR = os.getenv("VIDEOS_DIR", "./videos")
+VIDEOS_DIR = os.getenv("VIDEOS_DIR", "../../videos")
 MAX_SAMPLES = int(os.getenv("MAX_SAMPLES", "60"))
 SAMPLE_STRIDE_SEC = float(os.getenv("SAMPLE_STRIDE_SEC", "0"))
 INSERT_LANDMARKS = os.getenv("INSERT_LANDMARKS", "1") not in ("0", "false", "False", "")
@@ -96,10 +96,12 @@ def find_videos(base: Path):
 
 
 def insert_video_row_return_id(filename: str,
+                               label: str,
                                fps=None, width=None, height=None,
                                duration_sec=None, lighting=None, resolution=None) -> str:
     payload = {
         "filename": filename,
+        "label": label,  # ✅ nueva columna
         "fps": float(fps) if fps is not None else None,
         "width": int(width) if width is not None else None,
         "height": int(height) if height is not None else None,
@@ -145,13 +147,15 @@ def main():
         total += 1
         try:
             fps, w, h, dur, light, reso = video_metadata(path)
+            # 👇 ahora pasamos el label basado en la carpeta
             video_id = insert_video_row_return_id(
                 filename=path.name,
+                label=action,  # ✅ el nombre de la carpeta como label
                 fps=fps, width=w, height=h,
                 duration_sec=dur, lighting=light, resolution=reso
             )
             ok_v += 1
-            print(f"🎬 Video OK: {action}/{path.name} | id={video_id} | {reso} | {fps:.2f} fps | {dur:.2f}s | light≈{(light or 0):.1f}")
+            print(f"🎬 Video OK: {action}/{path.name} | label={action} | id={video_id} | {reso} | {fps:.2f} fps | {dur:.2f}s | light≈{(light or 0):.1f}")
 
             if INSERT_LANDMARKS:
                 try:
