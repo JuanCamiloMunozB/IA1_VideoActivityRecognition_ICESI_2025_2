@@ -152,12 +152,13 @@ El dataset se materializa en dos tablas con relación 1:N (prácticamente 1:1 en
   - landmarks (id, video_id, landmarks JSONB, created_at):
 
 
-    | Columna        | Tipo        | Descripción                                                            | Propósito                                                                                                                                                              |
+| Columna        | Tipo        | Descripción                                                            | Propósito                                                                                                                                                              |
 | -------------- | ----------- | ---------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **id**         | `int8`      | Identificador interno autoincremental.                                 | Facilita el manejo interno de filas en la base de datos.                                                                                                               |
 | **video_id**   | `uuid`      | Identificador del video al que pertenece este conjunto de *landmarks*. | Enlace con la tabla `videos`; asegura coherencia y trazabilidad entre datos brutos y procesados.                                                                       |
 | **landmarks**  | `jsonb`     | Estructura JSON que contiene los puntos detectados por cuadro.         | Es la información clave del movimiento. Incluye: `fps`, `frames`, y por cada frame un diccionario con coordenadas `x`, `y`, `z` y `visibility` de cada punto corporal. |
 | **created_at** | `timestamp` | Fecha y hora en que se generaron los *landmarks*.                      | Permite gestionar versiones o reprocesamientos de un mismo video.                                                                                                      |
+                                                                                    |
 
 ![Tabla landmarks:](https://github.com/JuanCamiloMunozB/IA1_VideoActivityRecognition_ICESI_2025_2/blob/main/Entrega1/docs/images/image3.png?raw=true)
 
