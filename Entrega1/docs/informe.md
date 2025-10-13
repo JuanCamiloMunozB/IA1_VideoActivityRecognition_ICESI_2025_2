@@ -177,6 +177,12 @@ Estas variables permiten:
 ### 3.3 Análisis exploratorio de datos (EDA)
 En esta seccion se van a destacar los aspectos mas relevantes del EDA realizado en [Link Collab:](https://!https://github.com/JuanCamiloMunozB/IA1_VideoActivityRecognition_ICESI_2025_2/blob/main/Entrega1/notebooks/EDA_videos.ipynb)
 
+Se realizó la unión de las tablas videos y landmarks provenientes para conformar una base consolidada, que será la base de datos final usada en el análisis y modelado.
+Se usaron las claves id (de videos) y video_id (de landmarks) para combinar los registros correspondientes a cada video con sus respectivos landmarks y metadatos (como fps, resolución, duración, iluminación y label).
+El resultado es un único DataFrame (df) que contiene tanto información técnica del video como los datos estructurados de pose, lo cual facilita posteriores análisis exploratorios, limpieza, extracción de características y entrenamiento del modelo.
+
+
+
 En este paso estamos realizando una limpieza y visualización inicial del dataset combinado (df), eliminando columnas que no son relevantes para el análisis exploratorio (id, filename, upload_date, etc.) y mostrando las primeras filas con df.head().El propósito es simplificar la vista de los datos para enfocarnos en las variables más informativas —como fps, resolución, duración, iluminación, label, y el campo landmarks—, facilitando así la comprensión de la estructura general y el contenido real que se obtuvo tras la integración de las tablas videos y landmarks.
 
 ![Link deleterows:](https://github.com/JuanCamiloMunozB/IA1_VideoActivityRecognition_ICESI_2025_2/blob/main/Entrega1/docs/images/delete_rows.png?raw=true)
@@ -184,6 +190,8 @@ En este paso estamos realizando una limpieza y visualización inicial del datase
 En este bloque estamos evaluando la calidad de las muestras del dataset mediante la información de landmarks. Para ello, se agrupan los puntos corporales en regiones anatómicas (cabeza, hombros, brazos, caderas y piernas) y se calculan métricas que permiten cuantificar la visibilidad y consistencia de las detecciones: el número total de frames por video, los cuartiles de nivel de visibilidad y la desviación estándar de visibilidad en cada región. El propósito es identificar si una menor calidad en la detección (por ejemplo, baja visibilidad por movimiento o postura) puede influir en el rendimiento del modelo de clasificación, permitiendo así analizar la relación entre la calidad del video y la precisión del modelo.
 
 ![Link combinedata:](https://github.com/JuanCamiloMunozB/IA1_VideoActivityRecognition_ICESI_2025_2/blob/main/Entrega1/docs/images/combine_data.png?raw=true)
+
+Analizando la tabla de landmarks nos damos cuenta que no cuenta con etiquetas. La tabla final deber tener una columna que indique la accion de la persona en el video, tambien debe tener la informacion mas estrcuturada. Analizar el json de frames por si solo es complicado.
 
 En este gráfico se representa la distribución de videos por tipo de actividad (label), con el fin de evaluar si el conjunto de datos está balanceado entre las diferentes clases que el modelo deberá aprender
 
@@ -196,6 +204,11 @@ Este gráfico muestra la distribución del número total de frames por tipo de a
 A partir del boxplot, se concluye que los videos de caminar tienden a ser más largos (mayor cantidad de frames), mientras que los de girar presentan más variabilidad y algunos casos con muy pocos fotogramas, lo que indica diferencias en la duración de las acciones grabadas. Esto es importante porque una duración desigual puede afectar la homogeneidad de las muestras y requerir ajustes como normalización de longitud o recorte de frames para equilibrar el entrenamiento del modelo.
 
 ![Link framedistribution:](https://github.com/JuanCamiloMunozB/IA1_VideoActivityRecognition_ICESI_2025_2/blob/main/Entrega1/docs/images/frame%20distributionpng.png?raw=true)
+
+Para solucionar el problema con los videos con la etiqueta de girar, se calculé total_frames por video desde el JSON de landmarks y, solo para la clase girar, se definio un umbral de duración “corta” usando el percentil 10 (con un mínimo absoluto de 8 frames como red de seguridad). Luego se filtro los videos de girar que quedaron por debajo de ese umbral (outliers de muy pocos fotogramas). Posteriormente se aplico este filtrado a todas las clases para asi garantizar que la cantidad minima de frames que deben contar todas sea de 10.
+
+
+En cuanto a los comportamientos respecto a las variables relacionadas con el nivel de vision, todas fueron similares para todas las categorias de videos, por lo que no fue necesario realizar ningun tipo de filtro o limpieza tomando estos valores como referencia.
 
 ## 4. Estrategias para expandir el dataset
 
