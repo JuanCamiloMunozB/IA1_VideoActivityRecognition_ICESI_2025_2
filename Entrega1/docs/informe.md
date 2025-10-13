@@ -123,6 +123,51 @@ Una vez capturados los videos, se implementó un pipeline automatizado para la e
 - Tabla `landmarks`: Coordenadas de los 33 puntos corporales por fotograma, almacenadas en formato JSONB para facilidad de consulta y análisis
 
 ### 3.2 Descripción del dataset inicial
+3.2 Descripción del dataset
+
+El conjunto de datos se compuso a partir de clips de video organizados en cuatro clases de actividad humana: caminar, girar, sentarse y ponerse_de_pie. Cada video se registró con sus metadatos técnicos y se procesó con MediaPipe Pose para extraer landmarks (puntos corporales) por cuadro.
+
+**Esquema y relación**.
+El dataset se materializa en dos tablas con relación 1:N (prácticamente 1:1 en nuestro flujo actual):
+![Esquema DB:](https://github.com/JuanCamiloMunozB/IA1_VideoActivityRecognition_ICESI_2025_2/blob/main/sources/Modelo%20de%20la%20Base%20de%20datos.png?raw=true)
+  - videos (id, filename, label, fps, resolution, width, height, duration_sec, lighting, upload_date):
+ | Columna          | Tipo        | Descripción                                                                                        | Propósito                                                                                   |
+| ---------------- | ----------- | -------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| **id**           | `uuid`      | Identificador único del video dentro del sistema.                                                  | Permite referenciar el video en otras tablas, como `landmarks`.                             |
+| **filename**     | `text`      | Nombre del archivo original del video (por ejemplo, `caminar_01.mp4`).                             | Facilita rastrear el origen de los datos y mantener trazabilidad.                           |
+| **label**        | `text`      | Clase de actividad a la que pertenece el video (`caminar`, `girar`, `sentarse`, `ponerse_de_pie`). | Etiqueta supervisada para el entrenamiento del modelo de clasificación.                     |
+| **fps**          | `numeric`   | Número de cuadros por segundo del video.                                                           | Permite analizar la fluidez de la grabación y sincronizar tiempos en el análisis de pose.   |
+| **resolution**   | `text`      | Resolución expresada como `<ancho>x<alto>` (por ejemplo, `1280x720`).                              | Sirve como referencia para evaluar la calidad y uniformidad de las grabaciones.             |
+| **width**        | `int4`      | Ancho del video en píxeles.                                                                        | Parámetro técnico para normalizar coordenadas o calcular proporciones espaciales.           |
+| **height**       | `int4`      | Alto del video en píxeles.                                                                         | Junto al ancho, permite determinar la relación de aspecto (aspect ratio).                   |
+| **duration_sec** | `numeric`   | Duración total del video en segundos.                                                              | Indicador de la longitud temporal de la muestra; útil para balancear duración entre clases. |
+| **lighting**     | `numeric`   | Nivel promedio de iluminación, obtenido del valor medio de intensidad en escala de grises.         | Permite controlar la calidad visual y evaluar condiciones de grabación.                     |
+| **upload_date**  | `timestamp` | Fecha y hora en que se insertó el registro en la base de datos.                                    | Mantiene trazabilidad temporal del dataset y facilita auditorías o versionado.              |
+
+
+![Tabla video:](https://github.com/JuanCamiloMunozB/IA1_VideoActivityRecognition_ICESI_2025_2/blob/main/Entrega1/docs/images/image2.png?raw=true)
+
+  - landmarks (id, video_id, landmarks JSONB, created_at):
+    | Columna        | Tipo        | Descripción                                                            | Propósito                                                                                                                                                              |
+| -------------- | ----------- | ---------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **id**         | `int8`      | Identificador interno autoincremental.                                 | Facilita el manejo interno de filas en la base de datos.                                                                                                               |
+| **video_id**   | `uuid`      | Identificador del video al que pertenece este conjunto de *landmarks*. | Enlace con la tabla `videos`; asegura coherencia y trazabilidad entre datos brutos y procesados.                                                                       |
+| **landmarks**  | `jsonb`     | Estructura JSON que contiene los puntos detectados por cuadro.         | Es la información clave del movimiento. Incluye: `fps`, `frames`, y por cada frame un diccionario con coordenadas `x`, `y`, `z` y `visibility` de cada punto corporal. |
+| **created_at** | `timestamp` | Fecha y hora en que se generaron los *landmarks*.                      | Permite gestionar versiones o reprocesamientos de un mismo video.                                                                                                      |
+
+![Tabla landmarks:](https://github.com/JuanCamiloMunozB/IA1_VideoActivityRecognition_ICESI_2025_2/blob/main/Entrega1/docs/images/image3.png?raw=true)
+
+**Contenido informativo**.
+
+  - En la tabla de videos analizamos la cantidad de muestras por clase, la distribución de duración y de FPS, la resolución (ancho/alto) y un estimador de iluminación (promedio de intensidades en   escala de grises).
+
+  - En landmarks cuantificamos cuántos frames con pose válida tiene cada clip, así como medidas básicas de calidad (por ejemplo, visibilidad promedio) que ayudan a identificar ruido o datos poco    confiables.
+
+**Uso previsto**.
+Estas variables permiten:
+(i) balancear las clases y la duración efectiva de las muestras,
+(ii) validar requisitos mínimos de calidad (FPS, iluminación, cantidad de landmarks por clip), y
+(iii) derivar rasgos cinemáticos (velocidades, ángulos e inclinaciones) para el modelado posterior.
 
 ### 3.3 Análisis exploratorio de datos (EDA)
 
