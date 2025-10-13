@@ -178,19 +178,24 @@ Estas variables permiten:
 En esta seccion se van a destacar los aspectos mas relevantes del EDA realizado en [Link Collab:](https://!https://github.com/JuanCamiloMunozB/IA1_VideoActivityRecognition_ICESI_2025_2/blob/main/Entrega1/notebooks/EDA_videos.ipynb)
 
 En este paso estamos realizando una limpieza y visualización inicial del dataset combinado (df), eliminando columnas que no son relevantes para el análisis exploratorio (id, filename, upload_date, etc.) y mostrando las primeras filas con df.head().El propósito es simplificar la vista de los datos para enfocarnos en las variables más informativas —como fps, resolución, duración, iluminación, label, y el campo landmarks—, facilitando así la comprensión de la estructura general y el contenido real que se obtuvo tras la integración de las tablas videos y landmarks.
-[Link deleterows:](https://github.com/JuanCamiloMunozB/IA1_VideoActivityRecognition_ICESI_2025_2/blob/main/Entrega1/docs/images/delete_rows.png?raw=true)
+
+![Link deleterows:](https://github.com/JuanCamiloMunozB/IA1_VideoActivityRecognition_ICESI_2025_2/blob/main/Entrega1/docs/images/delete_rows.png?raw=true)
 
 En este bloque estamos evaluando la calidad de las muestras del dataset mediante la información de landmarks. Para ello, se agrupan los puntos corporales en regiones anatómicas (cabeza, hombros, brazos, caderas y piernas) y se calculan métricas que permiten cuantificar la visibilidad y consistencia de las detecciones: el número total de frames por video, los cuartiles de nivel de visibilidad y la desviación estándar de visibilidad en cada región. El propósito es identificar si una menor calidad en la detección (por ejemplo, baja visibilidad por movimiento o postura) puede influir en el rendimiento del modelo de clasificación, permitiendo así analizar la relación entre la calidad del video y la precisión del modelo.
-[Link combinedata:](https://github.com/JuanCamiloMunozB/IA1_VideoActivityRecognition_ICESI_2025_2/blob/main/Entrega1/docs/images/combine_data.png?raw=true)
+
+![Link combinedata:](https://github.com/JuanCamiloMunozB/IA1_VideoActivityRecognition_ICESI_2025_2/blob/main/Entrega1/docs/images/combine_data.png?raw=true)
 
 En este gráfico se representa la distribución de videos por tipo de actividad (label), con el fin de evaluar si el conjunto de datos está balanceado entre las diferentes clases que el modelo deberá aprender
-[Link distribution:](https://github.com/JuanCamiloMunozB/IA1_VideoActivityRecognition_ICESI_2025_2/blob/main/Entrega1/docs/images/distribution.png?raw=true)
+
+![Link distribution:](https://github.com/JuanCamiloMunozB/IA1_VideoActivityRecognition_ICESI_2025_2/blob/main/Entrega1/docs/images/distribution.png?raw=true)
+
 A partir de la visualización, se observa que existen más muestras de las clases “caminar” y “girar” en comparación con “ponerse_de_pie” y “sentarse”, lo que indica un desbalance de clases en el dataset.
 Esta diferencia puede afectar el entrenamiento del modelo, ya que las clases con mayor cantidad de ejemplos podrían dominar el aprendizaje, reduciendo la capacidad del modelo para reconocer correctamente las actividades menos representadas. Por ello, será importante considerar técnicas de balanceo o ponderación de clases antes del modelado.
 
 Este gráfico muestra la distribución del número total de frames por tipo de actividad, con el propósito de analizar la duración y consistencia temporal de los videos en cada clase.
 A partir del boxplot, se concluye que los videos de caminar tienden a ser más largos (mayor cantidad de frames), mientras que los de girar presentan más variabilidad y algunos casos con muy pocos fotogramas, lo que indica diferencias en la duración de las acciones grabadas. Esto es importante porque una duración desigual puede afectar la homogeneidad de las muestras y requerir ajustes como normalización de longitud o recorte de frames para equilibrar el entrenamiento del modelo.
-[Link framedistribution:](https://github.com/JuanCamiloMunozB/IA1_VideoActivityRecognition_ICESI_2025_2/blob/main/Entrega1/docs/images/frame%20distributionpng.png?raw=true)
+
+![Link framedistribution:](https://github.com/JuanCamiloMunozB/IA1_VideoActivityRecognition_ICESI_2025_2/blob/main/Entrega1/docs/images/frame%20distributionpng.png?raw=true)
 
 ## 4. Estrategias para expandir el dataset
 
