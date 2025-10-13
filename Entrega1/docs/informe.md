@@ -181,7 +181,7 @@ Se realizó la unión de las tablas videos y landmarks provenientes para conform
 Se usaron las claves id (de videos) y video_id (de landmarks) para combinar los registros correspondientes a cada video con sus respectivos landmarks y metadatos (como fps, resolución, duración, iluminación y label).
 El resultado es un único DataFrame (df) que contiene tanto información técnica del video como los datos estructurados de pose, lo cual facilita posteriores análisis exploratorios, limpieza, extracción de características y entrenamiento del modelo.
 
-
+![Link deleterows:](https://github.com/JuanCamiloMunozB/IA1_VideoActivityRecognition_ICESI_2025_2/blob/main/Entrega1/docs/images/db_final.png?raw=true)
 
 En este paso estamos realizando una limpieza y visualización inicial del dataset combinado (df), eliminando columnas que no son relevantes para el análisis exploratorio (id, filename, upload_date, etc.) y mostrando las primeras filas con df.head().El propósito es simplificar la vista de los datos para enfocarnos en las variables más informativas —como fps, resolución, duración, iluminación, label, y el campo landmarks—, facilitando así la comprensión de la estructura general y el contenido real que se obtuvo tras la integración de las tablas videos y landmarks.
 
@@ -207,6 +207,7 @@ A partir del boxplot, se concluye que los videos de caminar tienden a ser más l
 
 Para solucionar el problema con los videos con la etiqueta de girar, se calculé total_frames por video desde el JSON de landmarks y, solo para la clase girar, se definio un umbral de duración “corta” usando el percentil 10 (con un mínimo absoluto de 8 frames como red de seguridad). Luego se filtro los videos de girar que quedaron por debajo de ese umbral (outliers de muy pocos fotogramas). Posteriormente se aplico este filtrado a todas las clases para asi garantizar que la cantidad minima de frames que deben contar todas sea de 10.
 
+![Link distribution:](https://github.com/JuanCamiloMunozB/IA1_VideoActivityRecognition_ICESI_2025_2/blob/main/Entrega1/docs/images/filter.png?raw=true)
 
 En cuanto a los comportamientos respecto a las variables relacionadas con el nivel de vision, todas fueron similares para todas las categorias de videos, por lo que no fue necesario realizar ningun tipo de filtro o limpieza tomando estos valores como referencia.
 
