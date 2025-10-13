@@ -131,6 +131,8 @@ El conjunto de datos se compuso a partir de clips de video organizados en cuatro
 El dataset se materializa en dos tablas con relación 1:N (prácticamente 1:1 en nuestro flujo actual):
 ![Esquema DB:](https://github.com/JuanCamiloMunozB/IA1_VideoActivityRecognition_ICESI_2025_2/blob/main/sources/Modelo%20de%20la%20Base%20de%20datos.png?raw=true)
   - videos (id, filename, label, fps, resolution, width, height, duration_sec, lighting, upload_date):
+ 
+ 
  | Columna          | Tipo        | Descripción                                                                                        | Propósito                                                                                   |
 | ---------------- | ----------- | -------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
 | **id**           | `uuid`      | Identificador único del video dentro del sistema.                                                  | Permite referenciar el video en otras tablas, como `landmarks`.                             |
@@ -148,6 +150,8 @@ El dataset se materializa en dos tablas con relación 1:N (prácticamente 1:1 en
 ![Tabla video:](https://github.com/JuanCamiloMunozB/IA1_VideoActivityRecognition_ICESI_2025_2/blob/main/Entrega1/docs/images/image2.png?raw=true)
 
   - landmarks (id, video_id, landmarks JSONB, created_at):
+
+
     | Columna        | Tipo        | Descripción                                                            | Propósito                                                                                                                                                              |
 | -------------- | ----------- | ---------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **id**         | `int8`      | Identificador interno autoincremental.                                 | Facilita el manejo interno de filas en la base de datos.                                                                                                               |
