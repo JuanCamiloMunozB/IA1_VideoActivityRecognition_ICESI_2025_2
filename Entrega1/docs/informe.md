@@ -175,6 +175,21 @@ Estas variables permiten:
 (iii) derivar rasgos cinemáticos (velocidades, ángulos e inclinaciones) para el modelado posterior.
 
 ### 3.3 Análisis exploratorio de datos (EDA)
+En esta seccion se van a destacar los aspectos mas relevantes del EDA realizado en [Link Collab:](https://!https://github.com/JuanCamiloMunozB/IA1_VideoActivityRecognition_ICESI_2025_2/blob/main/Entrega1/notebooks/EDA_videos.ipynb)
+
+En este paso estamos realizando una limpieza y visualización inicial del dataset combinado (df), eliminando columnas que no son relevantes para el análisis exploratorio (id, filename, upload_date, etc.) y mostrando las primeras filas con df.head().El propósito es simplificar la vista de los datos para enfocarnos en las variables más informativas —como fps, resolución, duración, iluminación, label, y el campo landmarks—, facilitando así la comprensión de la estructura general y el contenido real que se obtuvo tras la integración de las tablas videos y landmarks.
+-----
+
+En este bloque estamos evaluando la calidad de las muestras del dataset mediante la información de landmarks. Para ello, se agrupan los puntos corporales en regiones anatómicas (cabeza, hombros, brazos, caderas y piernas) y se calculan métricas que permiten cuantificar la visibilidad y consistencia de las detecciones: el número total de frames por video, los cuartiles de nivel de visibilidad y la desviación estándar de visibilidad en cada región. El propósito es identificar si una menor calidad en la detección (por ejemplo, baja visibilidad por movimiento o postura) puede influir en el rendimiento del modelo de clasificación, permitiendo así analizar la relación entre la calidad del video y la precisión del modelo.
+------
+
+En este gráfico se representa la distribución de videos por tipo de actividad (label), con el fin de evaluar si el conjunto de datos está balanceado entre las diferentes clases que el modelo deberá aprender
+------------------
+A partir de la visualización, se observa que existen más muestras de las clases “caminar” y “girar” en comparación con “ponerse_de_pie” y “sentarse”, lo que indica un desbalance de clases en el dataset.
+Esta diferencia puede afectar el entrenamiento del modelo, ya que las clases con mayor cantidad de ejemplos podrían dominar el aprendizaje, reduciendo la capacidad del modelo para reconocer correctamente las actividades menos representadas. Por ello, será importante considerar técnicas de balanceo o ponderación de clases antes del modelado.
+
+
+
 
 ## 4. Estrategias para expandir el dataset
 
