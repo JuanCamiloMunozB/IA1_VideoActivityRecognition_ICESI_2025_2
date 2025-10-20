@@ -1,0 +1,12 @@
+numpy
+pandas
+scikit-learn
+xgboost
+scipy
+matplotlib
+seaborn
+joblib
+python-dotenv
+supabase==2.*
+opencv-python
+mediapipe
