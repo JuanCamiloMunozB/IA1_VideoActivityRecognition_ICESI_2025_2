@@ -73,4 +73,9 @@ posiblemente por pérdida de landmarks durante la rotación corporal.
 
 ---
 
-*(Se deja la sección de conclusiones abierta para futuras ejecuciones del equipo.)*
+## 4. Análisis de impacto 
+
+
+
+## 5. Plan de despliegue
+
