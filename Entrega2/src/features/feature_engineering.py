@@ -46,6 +46,7 @@ def normalize_landmarks_frame(
     landmarks: Dict[str, Dict[str, float]],
     origin: str = "pelvis_mid",
     scale_ref: Tuple[str, str] = ("left_shoulder", "right_shoulder"),
+    scale_z: bool = False,
 ) -> Dict[str, Dict[str, float]]:
     """
     Normaliza landmarks por frame:
@@ -89,7 +90,7 @@ def normalize_landmarks_frame(
         out[k] = {
             "x": (v.get("x", 0.0) - ox) / scale,
             "y": (v.get("y", 0.0) - oy) / scale,
-            "z": v.get("z", 0.0),  # opcional: podrías escalar z también
+            "z": (v.get("z", 0.0) / scale) if scale_z else v.get("z", 0.0),
             "visibility": v.get("visibility", 1.0),
         }
     return out
@@ -197,6 +198,22 @@ def compute_trunk_inclination(landmarks: Dict[str, Dict[str, float]]) -> float:
     return float(np.arccos(np.clip(cosang, -1.0, 1.0)))
 
 
+def compute_torso_yaw_proxy(landmarks: Dict[str, Dict[str, float]]) -> float:
+    """
+    Proxy simple de yaw del torso usando los hombros en el plano X-Z.
+    Definimos vector hombros: SR - SL, y calculamos atan2(dz, dx).
+    Si no hay z, retorna NaN.
+    """
+    ls, rs = landmarks.get("left_shoulder"), landmarks.get("right_shoulder")
+    if not ls or not rs:
+        return np.nan
+    dx = float(rs.get("x", np.nan) - ls.get("x", np.nan))
+    dz = float(rs.get("z", np.nan) - ls.get("z", np.nan))
+    if not np.isfinite(dx) or not np.isfinite(dz):
+        return np.nan
+    return float(np.arctan2(dz, dx))
+
+
 def compute_velocities_sequence(
     frames: List[Dict[str, Any]],
     fps: float,
@@ -220,15 +237,20 @@ def compute_velocities_sequence(
     if fps is None or fps <= 0:
         fps = 30.0  # fallback razonable
 
-    dt = 1.0 / float(fps)
+    default_dt = 1.0 / float(fps)
     n = len(frames)
     out: Dict[str, np.ndarray] = {}
 
     # Construye series x,y para cada key
     series_xy: Dict[str, Tuple[np.ndarray, np.ndarray]] = {}
+    # timestamps (si existen) para derivar velocidades con espaciamiento real
+    times: List[float] = []
+    t_acc = 0.0
     for k in keys:
         xs, ys = [], []
-        for fr in frames:
+        times.clear()
+        t_acc = 0.0
+        for i, fr in enumerate(frames):
             lmk = fr.get("landmarks_norm")
             if not lmk or k not in lmk:
                 xs.append(np.nan)
@@ -236,7 +258,20 @@ def compute_velocities_sequence(
             else:
                 xs.append(lmk[k]["x"])
                 ys.append(lmk[k]["y"])
+            # manejar timestamp real si viene, sino acumular con dt fijo
+            t = fr.get("timestamp")
+            if isinstance(t, (int, float)) and t is not None:
+                times.append(float(t))
+            else:
+                times.append(t_acc)
+                t_acc += default_dt
         series_xy[k] = (np.array(xs, dtype=float), np.array(ys, dtype=float))
+    times_arr = np.array(times, dtype=float) if n > 0 else np.array([], dtype=float)
+    if n >= 2:
+        # asegurar monotonicidad mínima en tiempos sintéticos
+        if not np.all(np.diff(times_arr) > 0):
+            # si no son estrictamente crecientes, usar malla regular por fps
+            times_arr = np.arange(n, dtype=float) * default_dt
 
     # Derivada finita y magnitud
     for k, (xs, ys) in series_xy.items():
@@ -245,8 +280,13 @@ def compute_velocities_sequence(
             xs = _moving_average(xs, smooth_window)
             ys = _moving_average(ys, smooth_window)
 
-        vx = np.gradient(xs, dt)
-        vy = np.gradient(ys, dt)
+        # usar timestamps si están disponibles
+        if n >= 2 and times_arr.size == n:
+            vx = np.gradient(xs, times_arr)
+            vy = np.gradient(ys, times_arr)
+        else:
+            vx = np.gradient(xs, default_dt)
+            vy = np.gradient(ys, default_dt)
         vmag = np.sqrt(vx * vx + vy * vy)
         out[f"vel_{k}"] = vmag
 
@@ -288,6 +328,40 @@ def aggregate_window_features(
 
     idxs = window_indices(n, fps, win_sec, step_sec)
 
+    # Timestamps del video: usar reales si existen; fallback a malla regular por fps
+    default_dt = 1.0 / float(fps if (fps and fps > 0) else 30.0)
+    times = []
+    use_real = False
+    for fr in frames:
+        t = fr.get("timestamp")
+        if isinstance(t, (int, float)) and t is not None:
+            use_real = True
+            times.append(float(t))
+        else:
+            times.append(np.nan)
+    if not use_real:
+        times = list(np.arange(n, dtype=float) * default_dt)
+    else:
+        # rellenar NaN si hubiese huecos y asegurar monotonicidad simple
+        t_arr = np.array(times, dtype=float)
+        # fill forward/backward
+        mask = np.isnan(t_arr)
+        if mask.any():
+            # ffill
+            idxs_valid = np.where(~mask)[0]
+            if idxs_valid.size:
+                for i in range(1, n):
+                    if np.isnan(t_arr[i]):
+                        t_arr[i] = t_arr[i-1]
+                # bfill
+                for i in range(n-2, -1, -1):
+                    if np.isnan(t_arr[i]):
+                        t_arr[i] = t_arr[i+1]
+        # si no es estrictamente creciente, forzar malla regular
+        if not np.all(np.diff(t_arr) > 0):
+            t_arr = np.arange(n, dtype=float) * default_dt
+        times = t_arr.tolist()
+
     # Pre-calcular por frame: ángulos e inclinación
     angles_per_frame: List[Dict[str, float]] = []
     incl_per_frame: List[float] = []
@@ -299,6 +373,19 @@ def aggregate_window_features(
         angles_per_frame.append(ang)
         incl_per_frame.append(inc)
 
+    # Yaw proxy por frame (usar landmarks originales para z más estable)
+    yaw_per_frame: List[float] = []
+    shoulder_width: List[float] = []
+    for fr in frames:
+        L = fr.get("landmarks") or {}
+        yaw_per_frame.append(compute_torso_yaw_proxy(L))
+        if "left_shoulder" in L and "right_shoulder" in L:
+            dx = float(L["right_shoulder"].get("x", np.nan) - L["left_shoulder"].get("x", np.nan))
+            dy = float(L["right_shoulder"].get("y", np.nan) - L["left_shoulder"].get("y", np.nan))
+            shoulder_width.append(float(np.hypot(dx, dy)))
+        else:
+            shoulder_width.append(np.nan)
+
     # Pre-calcular velocidades
     vel_dict = compute_velocities_sequence(frames, fps=fps)
     vel_keys = list(vel_dict.keys())
@@ -306,6 +393,8 @@ def aggregate_window_features(
     # Convertir ángulos a DataFrame (alineado con frames)
     ang_df = pd.DataFrame(angles_per_frame).fillna(method="ffill").fillna(method="bfill")
     inc_arr = np.array(incl_per_frame, dtype=float)
+    yaw_arr = np.array(yaw_per_frame, dtype=float)
+    shoulder_arr = np.array(shoulder_width, dtype=float)
 
     rows = []
     for (a, b) in idxs:
@@ -321,11 +410,139 @@ def aggregate_window_features(
         feat["inclination_mean"] = float(np.nanmean(inc_win))
         feat["inclination_std"] = float(np.nanstd(inc_win))
 
-        # velocidades
+        # velocidades por landmark
         for vk in vel_keys:
             v = vel_dict[vk][a:b]
             feat[f"{vk}_mean"] = float(np.nanmean(v))
             feat[f"{vk}_p90"] = float(np.nanpercentile(v, 90))
+
+        # movimiento por región (suma de medias por región)
+        region_map = {
+            "hips": ["vel_left_hip", "vel_right_hip"],
+            "knees": ["vel_left_knee", "vel_right_knee"],
+            "ankles": ["vel_left_ankle", "vel_right_ankle"],
+            "wrists": ["vel_left_wrist", "vel_right_wrist"],
+            "head": ["vel_head"],
+        }
+        region_values = {}
+        for rname, rk in region_map.items():
+            vals = []
+            for kname in rk:
+                if kname in vel_dict:
+                    vals.append(float(np.nanmean(vel_dict[kname][a:b])))
+            region_values[rname] = float(np.nansum(vals)) if vals else np.nan
+            feat[f"region_move_{rname}"] = region_values[rname]
+
+        # visibilidad: medias y mínimos por región en la ventana
+        req_keys = {
+            "shoulders": ["left_shoulder", "right_shoulder"],
+            "hips": ["left_hip", "right_hip"],
+            "knees": ["left_knee", "right_knee"],
+            "ankles": ["left_ankle", "right_ankle"],
+            "wrists": ["left_wrist", "right_wrist"],
+            "head": ["head"],
+        }
+        # recopilar visibilidades
+        vis_by_region = {r: [] for r in req_keys}
+        for i in range(a, b):
+            lmk = frames[i].get("landmarks") or {}
+            for r, names in req_keys.items():
+                vals = [lmk[n].get("visibility", np.nan) for n in names if n in lmk]
+                if vals:
+                    vis_by_region[r].append(np.nanmean(vals))
+        for r, arr in vis_by_region.items():
+            if arr:
+                arr_np = np.array(arr, dtype=float)
+                feat[f"vis_{r}_mean"] = float(np.nanmean(arr_np))
+                feat[f"vis_{r}_min"] = float(np.nanmin(arr_np))
+            else:
+                feat[f"vis_{r}_mean"] = np.nan
+                feat[f"vis_{r}_min"] = np.nan
+
+        # yaw del torso y su velocidad
+        yaw_win = yaw_arr[a:b]
+        feat["yaw_mean"] = float(np.nanmean(yaw_win))
+        feat["yaw_std"] = float(np.nanstd(yaw_win))
+        # derivada de yaw con timestamps
+        t_win = np.array(times[a:b], dtype=float)
+        if len(t_win) >= 2 and np.all(np.isfinite(yaw_win)):
+            try:
+                yaw_vel = np.gradient(yaw_win, t_win)
+            except Exception:
+                yaw_vel = np.gradient(yaw_win)
+        else:
+            yaw_vel = np.gradient(yaw_win)
+        feat["yaw_vel_mean"] = float(np.nanmean(yaw_vel))
+        feat["yaw_vel_p90"] = float(np.nanpercentile(yaw_vel, 90))
+
+        # ancho de hombros (indicador de rotación respecto a la cámara)
+        sw = shoulder_arr[a:b]
+        feat["shoulder_width_mean"] = float(np.nanmean(sw))
+        feat["shoulder_width_std"] = float(np.nanstd(sw))
+        feat["shoulder_width_min"] = float(np.nanmin(sw))
+        # relación mínimo/medio para detectar encogimiento relativo
+        mean_sw = np.nanmean(sw)
+        feat["shoulder_width_min_ratio"] = float(np.nanmin(sw) / mean_sw) if mean_sw and np.isfinite(mean_sw) else np.nan
+
+        # tendencias por landmark (pendiente x/y vs tiempo dentro de la ventana)
+        def _slope(t_arr: np.ndarray, v_arr: np.ndarray) -> float:
+            mask = np.isfinite(t_arr) & np.isfinite(v_arr)
+            if mask.sum() >= 2:
+                try:
+                    return float(np.polyfit(t_arr[mask], v_arr[mask], 1)[0])
+                except Exception:
+                    return float("nan")
+            return float("nan")
+
+        landmark_keys = (
+            "left_hip", "right_hip",
+            "left_knee", "right_knee",
+            "left_ankle", "right_ankle",
+            "left_wrist", "right_wrist",
+            "head",
+        )
+        t_win = np.array(times[a:b], dtype=float)
+        for lk in landmark_keys:
+            xs, ys = [], []
+            for i in range(a, b):
+                lmk = frames[i].get("landmarks_norm") or frames[i].get("landmarks") or {}
+                if lk in lmk:
+                    xs.append(float(lmk[lk].get("x", np.nan)))
+                    ys.append(float(lmk[lk].get("y", np.nan)))
+                else:
+                    xs.append(np.nan)
+                    ys.append(np.nan)
+            xs = np.array(xs, dtype=float)
+            ys = np.array(ys, dtype=float)
+            feat[f"trend_{lk}_vx"] = _slope(t_win, xs)
+            feat[f"trend_{lk}_vy"] = _slope(t_win, ys)
+
+        # desplazamiento neto por landmark (último - primero de la ventana)
+        l0 = frames[a].get("landmarks_norm") or frames[a].get("landmarks") or {}
+        l1 = frames[b - 1].get("landmarks_norm") or frames[b - 1].get("landmarks") or {}
+        for lk in landmark_keys:
+            if lk in l0 and lk in l1:
+                dx = float(l1[lk].get("x", np.nan) - l0[lk].get("x", np.nan))
+                dy = float(l1[lk].get("y", np.nan) - l0[lk].get("y", np.nan))
+            else:
+                dx = np.nan
+                dy = np.nan
+            feat[f"disp_{lk}_dx"] = dx
+            feat[f"disp_{lk}_dy"] = dy
+            feat[f"disp_{lk}_mag"] = float(np.hypot(dx, dy)) if np.isfinite(dx) and np.isfinite(dy) else np.nan
+
+        # información temporal de la ventana (basada en timestamps)
+        t_start = float(times[a])
+        t_end = float(times[b - 1])
+        t_dur = float(max(t_end - t_start, 0.0))
+        t0 = float(times[0])
+        t_last = float(times[-1])
+        denom = max(t_last - t0, 1e-6)
+        t_mid = 0.5 * (t_start + t_end)
+        feat["t_start"] = t_start
+        feat["t_end"] = t_end
+        feat["t_duration"] = t_dur
+        feat["video_progress"] = float((t_mid - t0) / denom)
 
         feat["frame_start"] = int(frames[a]["frame_index"])
         feat["frame_end"] = int(frames[b - 1]["frame_index"])
