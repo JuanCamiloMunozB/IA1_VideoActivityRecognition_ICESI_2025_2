@@ -9,7 +9,12 @@ obteniendo las coordenadas tridimensionales de las articulaciones por frame
 Esto permite representar el movimiento de una persona como una secuencia de posiciones 
 numéricas en el espacio, eliminando dependencias de fondo, color o iluminación.
 
-### 1.1. Razonamiento metodológico
+### 1.1. Estrategia de Adquisición nuevos Datos
+Tras un análisis preliminar de los resultados obtenidos con el conjunto de datos inicial, se identificó la necesidad de una segunda fase de adquisición de datos para robustecer el dataset. Se verificó que una porción significativa de los videos originales debía ser descartada, principalmente debido a una duración insuficiente (conteo de frames por debajo del umbral mínimo requerido) para un análisis de series temporales efectivo.
+Asimismo, se detectaron problemas de calidad en los landmarks extraídos, derivados de condiciones de grabación subóptimas. Se observó que una visibilidad deficiente de las articulaciones y una iluminación inadecuada o inconsistente impactaban negativamente la precisión del extractor de poses (MediaPipe Pose).
+Para mitigar estos factores, se procedió a la grabación de nuevos videos bajo un protocolo controlado. Se aseguró que las nuevas muestras contaran con una duración adecuada y se priorizaron condiciones de iluminación óptimas y uniformes. Adicionalmente, se diversificó la captura de las actividades, asegurando que los ángulos de grabación fueran lo suficientemente variados (frontales, laterales y diagonales) para mejorar la capacidad de generalización del modelo ante diferentes perspectivas de la cámara.
+
+### 1.2. Razonamiento metodológico
 No se entrenaron redes convolucionales sobre imágenes o frames, 
 porque ese enfoque requiere grandes volúmenes de datos y GPU de alto rendimiento.  
 El uso de landmarks ofrece una representación cinemática compacta y eficiente 
@@ -17,7 +22,7 @@ que conserva la información relevante para clasificar posturas y movimientos.
 Cada video se convierte así en una **serie temporal de articulaciones humanas**, 
 base para el modelado con algoritmos clásicos de machine learning.
 
-### 1.2. Flujo técnico general
+### 1.3. Flujo técnico general
 
 El proyecto se organiza en módulos bajo `src/` y se ejecuta mediante tres notebooks:
 
@@ -34,20 +39,34 @@ mientras que los archivos de `src/` contienen la lógica modular reutilizable.
 
 ## 2. Diseño de los modelos
 
-Tres modelos fueron implementados para comparar desempeño:
+### 2.1. Preparación de Datos
+Previo al diseño de los modelos es necesaria una correcta preparación de los datos, la cual una etapa crítica para transformar las secuencias de video en un formato estructurado apto para el machine learning. El proceso se ejecutó mediante el notebook de preprocesamiento y se centró en la ingeniería de características.
+Inicialmente, se cargaron los datos crudos desde la base de datos. Se utilizó una función de expansión para procesar los datos JSON anidados, convirtiendo las secuencias de landmarks de cada video en un DataFrame tabular donde cada fila representaba un único frame.
+El núcleo de la preparación consistió en la normalización y la ingeniería de características. Se aplicó un suavizado temporal para reducir el ruido en las coordenadas de los landmarks. Siguiendo el razonamiento metodológico , las coordenadas 3D fueron normalizadas; esta normalización se basó en la referencia pélvica para la posición y la escala de los hombros para el tamaño, eliminando así las dependencias de la posición o escala del sujeto en el video.
+
+Para ello, Se implementó un pipeline que incluía la normalización de características. Para los modelos SVM, se aplicó StandardScaler4, una técnica de normalización Z-score. Esta estrategia es matemáticamente necesaria para modelos sensibles a la escala, como SVM, que operan basados en distancias.Cada característica $x$ se transforma restando la media ($\mu$) y dividiendo por la desviación estándar ($\sigma$) del conjunto de entrenamiento:$$z = \frac{x - \mu}{\sigma}$$Esto asegura que todas las características tengan una media de 0 y una varianza de 1, evitando que las features con rangos numéricos mayores (como las velocidades) dominen la función de pérdida o el cálculo del hiperplano sobre características con rangos menores (como los ángulos normalizados)
+
+A partir de estas coordenadas normalizadas, se generaron características cinemáticas de alto nivel, tales como ángulos articulares, velocidades de las extremidades y la inclinación del tronco.
+Finalmente, el proceso utilizó una técnica de ventanas temporales deslizantes de duración fija. Se calcularon agregados estadísticos (como la media y la desviación estándar) para cada característica de ingeniería dentro de estas ventanas. El resultado fue la exportación de un archivo features.csv, donde cada fila representa una ventana de tiempo y las columnas representan las características agregadas, listo para la fase de modelado.
+
+### 2.2. Modelos considerados:
+Para la fase de modelado, se utilizó el conjunto de características (features.csv) generado en la etapa de preparación de datos. El objetivo fue comparar tres algoritmos de clasificación supervisada (SVM, Random Forest y XGBoost), optimizando sus hiperparámetros y evaluando su capacidad de generalización.
 
 1. **SVM (Support Vector Machine)**  
-   - Implementado con `sklearn.svm.SVC` en un pipeline con `StandardScaler`.  
+   - Implementado con `sklearn.svm.SVC` en un pipeline con `StandardScaler`.
+   - El objetivo matemático del SVM es encontrar un hiperplano óptimo que maximice el margen (la distancia) entre los vectores de soporte de las diferentes clases en el espacio de       características.Justificación de Hiperparámetros: Dado que los datos pueden no ser linealmente separables, se exploraron diferentes kernels :Lineal: $K(\mathbf{x}_i, \mathbf{x}_j) = \mathbf{x}_i^T \mathbf{x}_j$RBF (Base Radial): $K(\mathbf{x}_i, \mathbf{x}_j) = \exp(-\gamma \|\mathbf{x}_i - \mathbf{x}_j\|^2)$, que mapea los datos a un espacio de mayor dimensión.El hiperparámetro $C$ 7 (parámetro de regularización) se ajustó para controlar la penalización por clasificación incorrecta, gestionando así el balance entre un margen amplio y la minimización de los errores de entrenamiento.
    - Ajuste de hiperparámetros mediante `GridSearchCV` con validación cruzada (k=3).  
    - Parámetros explorados: `C`, `kernel` (`linear`, `rbf`), `gamma`.  
 
 2. **Random Forest**  
-   - Modelo de ensamblado de árboles (`sklearn.ensemble.RandomForestClassifier`).  
+   - Modelo de ensamblado de árboles (`sklearn.ensemble.RandomForestClassifier`).
+   - El modelo construye múltiples árboles de decisión (n_estimators) 9 sobre subconjuntos aleatorios de las características. La decisión de división en cada nodo se optimiza minimizando una métrica de impureza, en este caso, el Índice de Gini:$$Gini = 1 - \sum_{i=1}^{C} (p_i)^2$$donde $p_i$ es la probabilidad de que una muestra en el nodo pertenezca a la clase $i$. Se exploraron también max_depth y min_samples_split para controlar la profundidad de los árboles y prevenir el sobreajuste.
    - Ajuste con rejilla de hiperparámetros (`n_estimators`, `max_depth`, `min_samples_split`, `min_samples_leaf`).  
    - Permite extraer **importancia de características**, útil para interpretación.
 
 3. **XGBoost**  
-   - Clasificador de gradiente optimizado (`xgboost.XGBClassifier`).  
+   - Clasificador de gradiente optimizado (`xgboost.XGBClassifier`).
+   - A diferencia del RF, XGBoost construye árboles de forma secuencial. Cada nuevo árbol se entrena para corregir los errores residuales del modelo anterior, optimizando iterativamente el gradiente de una función de pérdida (como la log-loss para clasificación multiclase). 
    - Parámetros: `max_depth`, `learning_rate`, `subsample`, `colsample_bytree`.  
    - Entrenado con validación cruzada idéntica (cv=3, f1-weighted).  
 
@@ -55,6 +74,9 @@ El proceso de entrenamiento se centraliza en `src/models/train_models.py`,
 donde se definen los **grids**, la división de datos (80 % train / 20 % test), 
 y se exportan los artefactos entrenados (`.joblib`) junto con los reportes JSON 
 y las matrices de confusión.
+
+### 2.4. Métrica de Evaluación
+Como métrica de evaluación principal para la optimización (GridSearchCV) y la comparación final, se seleccionó el F1-Macro Score131313.Justificación Matemática: El F1-Score es la media armónica de la Precisión y el Recall:$$F_1 = 2 \cdot \frac{Precision \cdot Recall}{Precision + Recall}$$Esta métrica es ideal para datasets con desbalance de clases, como el actual (donde clases como caminar son más frecuentes que girar). Al utilizar el promedio 'macro'14, se calcula el F1-Score para cada clase de forma independiente y luego se promedia, asegurando que el rendimiento en clases minoritarias tenga el mismo peso en la evaluación final que el de las clases mayoritarias.
 
 ---
 
