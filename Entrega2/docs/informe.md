@@ -108,7 +108,7 @@ y las matrices de confusión.
 ![Matriz de confusión XGBoost](../experiments/results/xgb_confusion_matrix.png)
 
 - **Comparación global**:
-XGBoost y Random forest tuvieron las mismas metricas. Alcanzaron un F1-score promedio ponderado aproximadamente de 0.90 , mientras que el modelo SVM obtuvo un valor aún mayor, cercano a 0.93. En los tres casos, la precisión ponderada fue mayor que el recall, lo que indica que los modelos tienden a cometer más errores de omisión (falsos negativos) que de comisión (falsos positivos), es decir, son más conservadores al predecir las clases.
+XGBoost y Random forest tuvieron las mismas metricas. Alcanzaron un F1-score promedio ponderado aproximadamente de 0.90 , mientras que el modelo SVM obtuvo un valor aún mayor, cercano a 0.93. En los tres casos, la precisión ponderada fue mayor que el recall, lo que indica que los modelos tienden a cometer más errores de omisión (falsos negativos) que de comisión (falsos positivos), es decir, son más conservadores al predecir las clases. **SVM es el modelo seleccionado para resolver el problema.**
 
 
 
@@ -157,7 +157,7 @@ Para facilitar la adopción y portabilidad de la solución, se propone empaqueta
 El producto final será una aplicación Python que:
 - Captura los fotogramas de una cámara en tiempo real.
 - Extrae los landmarks corporales usando MediaPipe.
-- Ejecuta el modelo de clasificación entrenado (XGBOOST) sobre los datos capturados.
+- Ejecuta el modelo de clasificación entrenado (SVM) sobre los datos capturados.
 - Muestra en pantalla la predicción de la actividad humana detectada, permitiendo la visualización en tiempo real.
 
 El uso de Docker garantiza que el sistema sea fácilmente portable entre diferentes sistemas operativos (Windows, Linux, MacOS) y que la instalación sea sencilla, requiriendo solo tener Docker instalado. Además, esto facilita futuras actualizaciones y el despliegue en diferentes contextos, como laboratorios, clínicas o centros deportivos.
