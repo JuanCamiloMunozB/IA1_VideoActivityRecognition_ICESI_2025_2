@@ -137,14 +137,14 @@ Aunque ambos modelos de árboles permiten interpretar la importancia de las vari
 
 ## 4. Análisis de impacto
 
-- **Accesibilidad y bajo costo**: Al basarse en landmarks extraídos con MediaPipe y modelos clásicos de machine learning, el sistema puede implementarse en hardware modesto, sin requerir GPU ni grandes volúmenes de datos. Esto facilita su adopción en entornos educativos, de salud o deportivos con recursos limitados.
+| Dimensión   | Efectos Positivos | Efectos Negativos | Estrategias de Mitigación |
+|--------------|------------------|-------------------|----------------------------|
+| **Social** | Permite una evaluación objetiva del movimiento humano y fomenta la autonomía en procesos de salud y rehabilitación. | Puede generar percepciones de vigilancia o riesgos de privacidad si no se comunica adecuadamente el uso de los datos. |  Aplicar consentimiento informado, anonimización de datos y regular el acceso al aplicativo.  |
+| **Económica** | Su bajo costo y requerimiento computacional facilitan la adopción en contextos con recursos limitados, y podría aprovecharse en el sector comercial para analizar patrones de comportamiento de clientes y optimizar servicios. | Empresas podrían usar el sistema para monitorear a sus clientes sin su consentimiento, obteniendo patrones de movimiento o interacción con fines comerciales no transparentes. | Establecer límites éticos y regulatorios claros sobre el uso de los datos, promoviendo la transparencia y el consentimiento informado en cualquier aplicación con fines económicos. |
+| **Ambiental** |  Presenta bajo consumo energético al no depender de GPU ni grandes infraestructuras. | La implementación masiva puede incrementar el consumo total si no se optimiza el procesamiento. |  Optimizar la eficiencia energética y promover prácticas sostenibles en el desarrollo y uso del sistema. Tambien verificar opciones menos efectivas en pro de consumo menor.  |
+| **Global** | Su diseño adaptable permite aplicarlo en distintos contextos, desde la salud hasta el ámbito educativo, favoreciendo la inclusión tecnológica. | Puede presentar sesgos en los modelos que afecten la precisión o la interpretación de resultados en diferentes culturas o poblaciones. | Realizar auditorías periódicas y ajustar los modelos para garantizar equidad, diversidad y cumplimiento regulatorio en cada contexto. |
 
 
-- **Aplicabilidad en salud y rehabilitación**: El sistema puede ser utilizado para monitorear la movilidad de pacientes, detectar patrones de riesgo (como dificultad para sentarse o levantarse), y apoyar procesos de rehabilitación física de manera objetiva y automatizada. 
-
-- **Limitaciones**: Aunque la solución es robusta, su precisión depende de la calidad de los landmarks y de la diversidad del dataset. Es importante considerar posibles sesgos si el sistema se despliega en poblaciones diferentes a las del entrenamiento. Además, debe garantizarse el consentimiento informado de los usuarios.
-
-- **Consideraciones de seguridad y consentimiento:** Es fundamental tener presente que cualquier sistema de monitoreo de actividad humana, incluso si no almacena imágenes sino solo datos de movimiento, puede ser sensible desde el punto de vista de la privacidad. Su uso debe estar siempre respaldado por el consentimiento informado de las personas monitoreadas, explicando claramente el propósito, el alcance y el destino de los datos recolectados. Además, se deben implementar medidas de seguridad para proteger la información y evitar accesos no autorizados, garantizando que los datos solo sean utilizados para los fines previstos y respetando la normativa vigente en protección de datos personales.
 
 
 
