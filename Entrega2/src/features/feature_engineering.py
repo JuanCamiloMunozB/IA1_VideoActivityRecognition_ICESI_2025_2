@@ -310,6 +310,207 @@ def window_indices(n_frames: int, fps: float, win_sec: float, step_sec: float) -
     return idxs
 
 
+# ---------- Features de rotación (Iteración 1) ----------
+def compute_torso_rotation(landmarks: Dict[str, Dict[str, float]]) -> float:
+    """
+    Calcula el ángulo de rotación horizontal del torso usando hombros.
+    Retorna el ángulo en radianes usando arctan2(dy, dx).
+    """
+    if "left_shoulder" not in landmarks or "right_shoulder" not in landmarks:
+        return 0.0
+    
+    ls = landmarks["left_shoulder"]
+    rs = landmarks["right_shoulder"]
+    
+    dx = rs.get("x", 0.0) - ls.get("x", 0.0)
+    dy = rs.get("y", 0.0) - ls.get("y", 0.0)
+    
+    return float(np.arctan2(dy, dx))
+
+
+def compute_body_twist(landmarks: Dict[str, Dict[str, float]]) -> float:
+    """
+    Calcula la diferencia angular entre línea de hombros y línea de caderas.
+    Mide el 'twist' o torsión del cuerpo.
+    """
+    if not all(k in landmarks for k in ["left_shoulder", "right_shoulder", "left_hip", "right_hip"]):
+        return 0.0
+    
+    # Ángulo de hombros
+    ls = landmarks["left_shoulder"]
+    rs = landmarks["right_shoulder"]
+    shoulder_angle = np.arctan2(
+        rs.get("y", 0.0) - ls.get("y", 0.0),
+        rs.get("x", 0.0) - ls.get("x", 0.0)
+    )
+    
+    # Ángulo de caderas
+    lh = landmarks["left_hip"]
+    rh = landmarks["right_hip"]
+    hip_angle = np.arctan2(
+        rh.get("y", 0.0) - lh.get("y", 0.0),
+        rh.get("x", 0.0) - lh.get("x", 0.0)
+    )
+    
+    # Diferencia angular
+    twist = float(shoulder_angle - hip_angle)
+    # Normalizar a [-pi, pi]
+    while twist > np.pi:
+        twist -= 2 * np.pi
+    while twist < -np.pi:
+        twist += 2 * np.pi
+    
+    return twist
+
+
+def compute_depth_features(landmarks: Dict[str, Dict[str, float]]) -> Dict[str, float]:
+    """
+    Calcula features relacionadas con la profundidad (coordenada z).
+    Incluye diferencias z entre hombros y entre caderas.
+    """
+    features = {}
+    
+    # Diferencia z entre hombros
+    if "left_shoulder" in landmarks and "right_shoulder" in landmarks:
+        ls_z = landmarks["left_shoulder"].get("z", 0.0)
+        rs_z = landmarks["right_shoulder"].get("z", 0.0)
+        features["diff_z_shoulders"] = abs(rs_z - ls_z)
+    else:
+        features["diff_z_shoulders"] = 0.0
+    
+    # Diferencia z entre caderas
+    if "left_hip" in landmarks and "right_hip" in landmarks:
+        lh_z = landmarks["left_hip"].get("z", 0.0)
+        rh_z = landmarks["right_hip"].get("z", 0.0)
+        features["diff_z_hips"] = abs(rh_z - lh_z)
+    else:
+        features["diff_z_hips"] = 0.0
+    
+    return features
+
+
+def compute_body_width(landmarks: Dict[str, Dict[str, float]]) -> Dict[str, float]:
+    """
+    Calcula el ancho del cuerpo (distancia entre hombros y entre caderas).
+    """
+    features = {}
+    
+    # Ancho de hombros
+    if "left_shoulder" in landmarks and "right_shoulder" in landmarks:
+        ls = landmarks["left_shoulder"]
+        rs = landmarks["right_shoulder"]
+        dx = rs.get("x", 0.0) - ls.get("x", 0.0)
+        dy = rs.get("y", 0.0) - ls.get("y", 0.0)
+        features["shoulder_width"] = float(np.hypot(dx, dy))
+    else:
+        features["shoulder_width"] = 0.0
+    
+    # Ancho de caderas
+    if "left_hip" in landmarks and "right_hip" in landmarks:
+        lh = landmarks["left_hip"]
+        rh = landmarks["right_hip"]
+        dx = rh.get("x", 0.0) - lh.get("x", 0.0)
+        dy = rh.get("y", 0.0) - lh.get("y", 0.0)
+        features["hip_width"] = float(np.hypot(dx, dy))
+    else:
+        features["hip_width"] = 0.0
+    
+    return features
+
+
+# ---------- Features de movimiento vertical (Iteración 2) ----------
+def compute_vertical_movement_frame(landmarks: Dict[str, Dict[str, float]]) -> Dict[str, float]:
+    """
+    Extrae coordenadas Y y métricas verticales clave para un frame.
+    Útil para diferenciar sentarse vs ponerse_de_pie.
+    """
+    features = {}
+    
+    # Altura de pelvis (promedio de caderas)
+    if "left_hip" in landmarks and "right_hip" in landmarks:
+        pelvis_y = (landmarks["left_hip"].get("y", 0.0) + landmarks["right_hip"].get("y", 0.0)) / 2.0
+        features["pelvis_y"] = pelvis_y
+    else:
+        features["pelvis_y"] = 0.0
+    
+    # Altura de rodillas (promedio)
+    if "left_knee" in landmarks and "right_knee" in landmarks:
+        knee_y = (landmarks["left_knee"].get("y", 0.0) + landmarks["right_knee"].get("y", 0.0)) / 2.0
+        features["knee_y"] = knee_y
+    else:
+        features["knee_y"] = 0.0
+    
+    return features
+
+
+def compute_knee_hip_flexion(landmarks: Dict[str, Dict[str, float]]) -> Dict[str, float]:
+    """
+    Calcula ángulos de flexión de rodilla y cadera.
+    Importantes para detectar sentarse/ponerse_de_pie.
+    """
+    features = {}
+    
+    # Ángulo de rodilla derecha
+    if all(k in landmarks for k in ["right_hip", "right_knee", "right_ankle"]):
+        hip = (landmarks["right_hip"]["x"], landmarks["right_hip"]["y"])
+        knee = (landmarks["right_knee"]["x"], landmarks["right_knee"]["y"])
+        ankle = (landmarks["right_ankle"]["x"], landmarks["right_ankle"]["y"])
+        features["knee_angle_r"] = float(_angle_3pts(hip, knee, ankle))
+    else:
+        features["knee_angle_r"] = 0.0
+    
+    # Ángulo de rodilla izquierda
+    if all(k in landmarks for k in ["left_hip", "left_knee", "left_ankle"]):
+        hip = (landmarks["left_hip"]["x"], landmarks["left_hip"]["y"])
+        knee = (landmarks["left_knee"]["x"], landmarks["left_knee"]["y"])
+        ankle = (landmarks["left_ankle"]["x"], landmarks["left_ankle"]["y"])
+        features["knee_angle_l"] = float(_angle_3pts(hip, knee, ankle))
+    else:
+        features["knee_angle_l"] = 0.0
+    
+    # Ángulo de cadera derecha (hip-shoulder-knee)
+    if all(k in landmarks for k in ["right_shoulder", "right_hip", "right_knee"]):
+        shoulder = (landmarks["right_shoulder"]["x"], landmarks["right_shoulder"]["y"])
+        hip = (landmarks["right_hip"]["x"], landmarks["right_hip"]["y"])
+        knee = (landmarks["right_knee"]["x"], landmarks["right_knee"]["y"])
+        features["hip_angle_r"] = float(_angle_3pts(shoulder, hip, knee))
+    else:
+        features["hip_angle_r"] = 0.0
+    
+    # Ángulo de cadera izquierda
+    if all(k in landmarks for k in ["left_shoulder", "left_hip", "left_knee"]):
+        shoulder = (landmarks["left_shoulder"]["x"], landmarks["left_shoulder"]["y"])
+        hip = (landmarks["left_hip"]["x"], landmarks["left_hip"]["y"])
+        knee = (landmarks["left_knee"]["x"], landmarks["left_knee"]["y"])
+        features["hip_angle_l"] = float(_angle_3pts(shoulder, hip, knee))
+    else:
+        features["hip_angle_l"] = 0.0
+    
+    return features
+
+
+def compute_stability_features(landmarks: Dict[str, Dict[str, float]]) -> Dict[str, float]:
+    """
+    Calcula features de estabilidad y centro de masa.
+    Útil para distinguir movimientos estables vs inestables.
+    """
+    features = {}
+    
+    # Centro de masa aproximado (promedio de puntos clave)
+    key_points = ["left_shoulder", "right_shoulder", "left_hip", "right_hip"]
+    xs = [landmarks[k].get("x", 0.0) for k in key_points if k in landmarks]
+    ys = [landmarks[k].get("y", 0.0) for k in key_points if k in landmarks]
+    
+    if xs and ys:
+        features["center_x"] = float(np.mean(xs))
+        features["center_y"] = float(np.mean(ys))
+    else:
+        features["center_x"] = 0.0
+        features["center_y"] = 0.0
+    
+    return features
+
+
 def aggregate_window_features(
     frames: List[Dict[str, Any]],
     fps: float,
@@ -391,7 +592,7 @@ def aggregate_window_features(
     vel_keys = list(vel_dict.keys())
 
     # Convertir ángulos a DataFrame (alineado con frames)
-    ang_df = pd.DataFrame(angles_per_frame).fillna(method="ffill").fillna(method="bfill")
+    ang_df = pd.DataFrame(angles_per_frame).ffill().bfill()
     inc_arr = np.array(incl_per_frame, dtype=float)
     yaw_arr = np.array(yaw_per_frame, dtype=float)
     shoulder_arr = np.array(shoulder_width, dtype=float)
@@ -530,6 +731,148 @@ def aggregate_window_features(
             feat[f"disp_{lk}_dx"] = dx
             feat[f"disp_{lk}_dy"] = dy
             feat[f"disp_{lk}_mag"] = float(np.hypot(dx, dy)) if np.isfinite(dx) and np.isfinite(dy) else np.nan
+
+        # ========== NUEVAS FEATURES DE ROTACIÓN (Iteración 1) ==========
+        # Pre-calcular features de rotación por frame en la ventana
+        torso_rotations = []
+        body_twists = []
+        depth_features_list = []
+        width_features_list = []
+        
+        for i in range(a, b):
+            lmk = frames[i].get("landmarks_norm") or frames[i].get("landmarks") or {}
+            torso_rotations.append(compute_torso_rotation(lmk))
+            body_twists.append(compute_body_twist(lmk))
+            depth_features_list.append(compute_depth_features(lmk))
+            width_features_list.append(compute_body_width(lmk))
+        
+        # Agregar estadísticas de rotación del torso
+        torso_rot_arr = np.array(torso_rotations, dtype=float)
+        feat["torso_rotation_mean"] = float(np.nanmean(torso_rot_arr))
+        feat["torso_rotation_std"] = float(np.nanstd(torso_rot_arr))
+        feat["torso_rotation_range"] = float(np.nanmax(torso_rot_arr) - np.nanmin(torso_rot_arr))
+        
+        # Agregar estadísticas de body twist
+        twist_arr = np.array(body_twists, dtype=float)
+        feat["body_twist_mean"] = float(np.nanmean(twist_arr))
+        feat["body_twist_std"] = float(np.nanstd(twist_arr))
+        feat["body_twist_max"] = float(np.nanmax(np.abs(twist_arr)))
+        
+        # Agregar features de profundidad
+        diff_z_shoulders = [d["diff_z_shoulders"] for d in depth_features_list]
+        diff_z_hips = [d["diff_z_hips"] for d in depth_features_list]
+        feat["diff_z_shoulders_mean"] = float(np.nanmean(diff_z_shoulders))
+        feat["diff_z_hips_mean"] = float(np.nanmean(diff_z_hips))
+        
+        # Agregar features de ancho de cuerpo
+        shoulder_widths = [w["shoulder_width"] for w in width_features_list]
+        hip_widths = [w["hip_width"] for w in width_features_list]
+        feat["shoulder_width_custom_mean"] = float(np.nanmean(shoulder_widths))
+        feat["shoulder_width_custom_std"] = float(np.nanstd(shoulder_widths))
+        feat["hip_width_mean"] = float(np.nanmean(hip_widths))
+        feat["hip_width_std"] = float(np.nanstd(hip_widths))
+        
+        # Velocidad angular (derivada de torso_rotation)
+        t_win_rot = np.array(times[a:b], dtype=float)
+        if len(t_win_rot) >= 2 and np.all(np.isfinite(torso_rot_arr)):
+            try:
+                angular_velocity = np.gradient(torso_rot_arr, t_win_rot)
+            except Exception:
+                angular_velocity = np.gradient(torso_rot_arr)
+        else:
+            angular_velocity = np.gradient(torso_rot_arr)
+        
+        feat["angular_velocity_mean"] = float(np.nanmean(angular_velocity))
+        feat["angular_velocity_std"] = float(np.nanstd(angular_velocity))
+        feat["angular_velocity_max"] = float(np.nanmax(np.abs(angular_velocity)))
+
+        # ========== NUEVAS FEATURES DE MOVIMIENTO VERTICAL (Iteración 2) ==========
+        # Pre-calcular features verticales por frame
+        vertical_features_list = []
+        knee_hip_flexion_list = []
+        stability_features_list = []
+        
+        for i in range(a, b):
+            lmk = frames[i].get("landmarks_norm") or frames[i].get("landmarks") or {}
+            vertical_features_list.append(compute_vertical_movement_frame(lmk))
+            knee_hip_flexion_list.append(compute_knee_hip_flexion(lmk))
+            stability_features_list.append(compute_stability_features(lmk))
+        
+        # Features de altura (pelvis y rodillas)
+        pelvis_y_arr = np.array([v["pelvis_y"] for v in vertical_features_list], dtype=float)
+        knee_y_arr = np.array([v["knee_y"] for v in vertical_features_list], dtype=float)
+        
+        feat["pelvis_height_mean"] = float(np.nanmean(pelvis_y_arr))
+        feat["pelvis_height_std"] = float(np.nanstd(pelvis_y_arr))
+        feat["pelvis_height_range"] = float(np.nanmax(pelvis_y_arr) - np.nanmin(pelvis_y_arr))
+        feat["knee_height_mean"] = float(np.nanmean(knee_y_arr))
+        
+        # Velocidad y aceleración vertical de pelvis
+        if len(t_win_rot) >= 2 and np.all(np.isfinite(pelvis_y_arr)):
+            try:
+                pelvis_velocity_y = np.gradient(pelvis_y_arr, t_win_rot)
+            except Exception:
+                pelvis_velocity_y = np.gradient(pelvis_y_arr)
+        else:
+            pelvis_velocity_y = np.gradient(pelvis_y_arr)
+        
+        feat["pelvis_velocity_y_mean"] = float(np.nanmean(pelvis_velocity_y))
+        feat["pelvis_velocity_y_std"] = float(np.nanstd(pelvis_velocity_y))
+        feat["pelvis_velocity_y_max"] = float(np.nanmax(np.abs(pelvis_velocity_y)))
+        
+        # Aceleración vertical
+        if len(pelvis_velocity_y) >= 2:
+            try:
+                pelvis_acceleration_y = np.gradient(pelvis_velocity_y, t_win_rot)
+            except Exception:
+                pelvis_acceleration_y = np.gradient(pelvis_velocity_y)
+            feat["pelvis_acceleration_y_mean"] = float(np.nanmean(pelvis_acceleration_y))
+            feat["pelvis_acceleration_y_std"] = float(np.nanstd(pelvis_acceleration_y))
+        else:
+            feat["pelvis_acceleration_y_mean"] = 0.0
+            feat["pelvis_acceleration_y_std"] = 0.0
+        
+        # Dirección vertical (porcentaje de frames subiendo)
+        upward_frames = np.sum(pelvis_velocity_y > 0)
+        feat["vertical_direction"] = float(upward_frames / len(pelvis_velocity_y)) if len(pelvis_velocity_y) > 0 else 0.5
+        
+        # Features de ángulos de rodilla y cadera
+        knee_r_arr = np.array([k["knee_angle_r"] for k in knee_hip_flexion_list], dtype=float)
+        knee_l_arr = np.array([k["knee_angle_l"] for k in knee_hip_flexion_list], dtype=float)
+        hip_r_arr = np.array([k["hip_angle_r"] for k in knee_hip_flexion_list], dtype=float)
+        hip_l_arr = np.array([k["hip_angle_l"] for k in knee_hip_flexion_list], dtype=float)
+        
+        feat["knee_angle_r_mean"] = float(np.nanmean(knee_r_arr))
+        feat["knee_angle_r_std"] = float(np.nanstd(knee_r_arr))
+        feat["knee_angle_l_mean"] = float(np.nanmean(knee_l_arr))
+        feat["hip_angle_r_mean"] = float(np.nanmean(hip_r_arr))
+        feat["hip_angle_l_mean"] = float(np.nanmean(hip_l_arr))
+        
+        # Cambios en ángulos (velocidad angular de articulaciones)
+        if len(t_win_rot) >= 2:
+            knee_r_change = np.gradient(knee_r_arr, t_win_rot)
+            hip_r_change = np.gradient(hip_r_arr, t_win_rot)
+            feat["knee_angle_r_change_mean"] = float(np.nanmean(np.abs(knee_r_change)))
+            feat["knee_angle_r_change_max"] = float(np.nanmax(np.abs(knee_r_change)))
+            feat["hip_angle_r_change_mean"] = float(np.nanmean(np.abs(hip_r_change)))
+        else:
+            feat["knee_angle_r_change_mean"] = 0.0
+            feat["knee_angle_r_change_max"] = 0.0
+            feat["hip_angle_r_change_mean"] = 0.0
+        
+        # Features de estabilidad (centro de masa)
+        center_x_arr = np.array([s["center_x"] for s in stability_features_list], dtype=float)
+        center_y_arr = np.array([s["center_y"] for s in stability_features_list], dtype=float)
+        
+        feat["center_displacement_x"] = float(np.nanmax(center_x_arr) - np.nanmin(center_x_arr))
+        feat["center_displacement_y"] = float(np.nanmax(center_y_arr) - np.nanmin(center_y_arr))
+        feat["center_displacement_x_std"] = float(np.nanstd(center_x_arr))
+        feat["center_displacement_y_std"] = float(np.nanstd(center_y_arr))
+        
+        # Ratio de desplazamiento (horizontal vs vertical)
+        disp_x = feat["center_displacement_x"]
+        disp_y = feat["center_displacement_y"]
+        feat["displacement_ratio_x_y"] = float(disp_x / disp_y) if disp_y > 1e-6 else 0.0
 
         # información temporal de la ventana (basada en timestamps)
         t_start = float(times[a])

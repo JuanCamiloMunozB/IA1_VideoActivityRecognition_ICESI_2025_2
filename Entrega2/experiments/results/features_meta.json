@@ -1,0 +1,15 @@
+{
+  "visibility_min": 0.8,
+  "min_frames_per_video": 10,
+  "window_size_sec": 1.0,
+  "window_step_sec": 0.5,
+  "smooth_window": 5,
+  "n_rows": 175,
+  "n_features": 141,
+  "label_counts": {
+    "caminar": 70,
+    "sentarse": 38,
+    "ponerse_de_pie": 38,
+    "girar": 29
+  }
+}
