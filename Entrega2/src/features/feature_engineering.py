@@ -250,7 +250,7 @@ def compute_velocities_sequence(
         xs, ys = [], []
         times.clear()
         t_acc = 0.0
-        for i, fr in enumerate(frames):
+        for fr in frames:
             lmk = fr.get("landmarks_norm")
             if not lmk or k not in lmk:
                 xs.append(np.nan)
@@ -258,6 +258,7 @@ def compute_velocities_sequence(
             else:
                 xs.append(lmk[k]["x"])
                 ys.append(lmk[k]["y"])
+
             # manejar timestamp real si viene, sino acumular con dt fijo
             t = fr.get("timestamp")
             if isinstance(t, (int, float)) and t is not None:
@@ -265,7 +266,9 @@ def compute_velocities_sequence(
             else:
                 times.append(t_acc)
                 t_acc += default_dt
+
         series_xy[k] = (np.array(xs, dtype=float), np.array(ys, dtype=float))
+
     times_arr = np.array(times, dtype=float) if n > 0 else np.array([], dtype=float)
     if n >= 2:
         # asegurar monotonicidad mínima en tiempos sintéticos
@@ -275,23 +278,27 @@ def compute_velocities_sequence(
 
     # Derivada finita y magnitud
     for k, (xs, ys) in series_xy.items():
-        # suavizado previo opcional
         if smooth_window and smooth_window > 1:
             xs = _moving_average(xs, smooth_window)
             ys = _moving_average(ys, smooth_window)
 
-        # usar timestamps si están disponibles
+        # usar timestamps si están disponibles y con tamaño consistente
         if n >= 2 and times_arr.size == n:
-            vx = np.gradient(xs, times_arr)
-            vy = np.gradient(ys, times_arr)
+            try:
+                vx = np.gradient(xs, times_arr)
+                vy = np.gradient(ys, times_arr)
+            except Exception:
+                # fallback por si numpy se queja igualmente
+                vx = np.gradient(xs, default_dt)
+                vy = np.gradient(ys, default_dt)
         else:
             vx = np.gradient(xs, default_dt)
             vy = np.gradient(ys, default_dt)
+
         vmag = np.sqrt(vx * vx + vy * vy)
         out[f"vel_{k}"] = vmag
 
     return out
-
 
 # ---------- Ensamblado por ventana ----------
 def window_indices(n_frames: int, fps: float, win_sec: float, step_sec: float) -> List[Tuple[int, int]]:
@@ -666,15 +673,23 @@ def aggregate_window_features(
         feat["yaw_std"] = float(np.nanstd(yaw_win))
         # derivada de yaw con timestamps
         t_win = np.array(times[a:b], dtype=float)
-        if len(t_win) >= 2 and np.all(np.isfinite(yaw_win)):
-            try:
-                yaw_vel = np.gradient(yaw_win, t_win)
-            except Exception:
+
+        if yaw_win.size >= 2:
+            if len(t_win) >= 2 and len(t_win) == yaw_win.size and np.all(np.isfinite(yaw_win)):
+                try:
+                    yaw_vel = np.gradient(yaw_win, t_win)
+                except Exception:
+                    yaw_vel = np.gradient(yaw_win)
+            else:
+                # usar espaciamiento uniforme cuando timestamps no son usables
                 yaw_vel = np.gradient(yaw_win)
         else:
-            yaw_vel = np.gradient(yaw_win)
+            # con menos de 2 puntos, no se puede derivar; velocidad ~ 0
+            yaw_vel = np.zeros_like(yaw_win, dtype=float)
+
         feat["yaw_vel_mean"] = float(np.nanmean(yaw_vel))
         feat["yaw_vel_p90"] = float(np.nanpercentile(yaw_vel, 90))
+
 
         # ancho de hombros (indicador de rotación respecto a la cámara)
         sw = shoulder_arr[a:b]
@@ -774,17 +789,24 @@ def aggregate_window_features(
         
         # Velocidad angular (derivada de torso_rotation)
         t_win_rot = np.array(times[a:b], dtype=float)
-        if len(t_win_rot) >= 2 and np.all(np.isfinite(torso_rot_arr)):
-            try:
-                angular_velocity = np.gradient(torso_rot_arr, t_win_rot)
-            except Exception:
+
+        if torso_rot_arr.size >= 2:
+            if len(t_win_rot) >= 2 and len(t_win_rot) == torso_rot_arr.size and np.all(np.isfinite(torso_rot_arr)):
+                try:
+                    angular_velocity = np.gradient(torso_rot_arr, t_win_rot)
+                except Exception:
+                    angular_velocity = np.gradient(torso_rot_arr)
+            else:
+                # tiempos no utilizables: asumir espaciamiento uniforme
                 angular_velocity = np.gradient(torso_rot_arr)
         else:
-            angular_velocity = np.gradient(torso_rot_arr)
-        
+            # con menos de 2 puntos, la derivada no está definida
+            angular_velocity = np.zeros_like(torso_rot_arr, dtype=float)
+
         feat["angular_velocity_mean"] = float(np.nanmean(angular_velocity))
         feat["angular_velocity_std"] = float(np.nanstd(angular_velocity))
         feat["angular_velocity_max"] = float(np.nanmax(np.abs(angular_velocity)))
+
 
         # ========== NUEVAS FEATURES DE MOVIMIENTO VERTICAL (Iteración 2) ==========
         # Pre-calcular features verticales por frame
@@ -806,22 +828,27 @@ def aggregate_window_features(
         feat["pelvis_height_std"] = float(np.nanstd(pelvis_y_arr))
         feat["pelvis_height_range"] = float(np.nanmax(pelvis_y_arr) - np.nanmin(pelvis_y_arr))
         feat["knee_height_mean"] = float(np.nanmean(knee_y_arr))
-        
+                
         # Velocidad y aceleración vertical de pelvis
-        if len(t_win_rot) >= 2 and np.all(np.isfinite(pelvis_y_arr)):
-            try:
-                pelvis_velocity_y = np.gradient(pelvis_y_arr, t_win_rot)
-            except Exception:
+        if pelvis_y_arr.size >= 2:
+            if len(t_win_rot) >= 2 and len(t_win_rot) == pelvis_y_arr.size and np.all(np.isfinite(pelvis_y_arr)):
+                try:
+                    pelvis_velocity_y = np.gradient(pelvis_y_arr, t_win_rot)
+                except Exception:
+                    pelvis_velocity_y = np.gradient(pelvis_y_arr)
+            else:
+                # tiempos no usables: asumir espaciamiento uniforme
                 pelvis_velocity_y = np.gradient(pelvis_y_arr)
         else:
-            pelvis_velocity_y = np.gradient(pelvis_y_arr)
+            # con menos de 2 puntos no se puede derivar; velocidad ~ 0
+            pelvis_velocity_y = np.zeros_like(pelvis_y_arr, dtype=float)
         
         feat["pelvis_velocity_y_mean"] = float(np.nanmean(pelvis_velocity_y))
         feat["pelvis_velocity_y_std"] = float(np.nanstd(pelvis_velocity_y))
         feat["pelvis_velocity_y_max"] = float(np.nanmax(np.abs(pelvis_velocity_y)))
         
         # Aceleración vertical
-        if len(pelvis_velocity_y) >= 2:
+        if pelvis_velocity_y.size >= 2:
             try:
                 pelvis_acceleration_y = np.gradient(pelvis_velocity_y, t_win_rot)
             except Exception:

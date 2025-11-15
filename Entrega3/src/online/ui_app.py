@@ -11,21 +11,68 @@ from Entrega3.src.online.realtime_inference import RealtimeHARPredictor
 from Entrega3.src.online.posture_metrics import compute_posture_metrics
 
 
+def _draw_info_panel(frame, lines, *, x=10, y=20, line_height=22, padding=10):
+    """
+    Dibuja un panel con fondo oscuro y varias lineas de texto.
+    """
+    if not lines:
+        return
+
+    panel_height = padding * 2 + line_height * len(lines)
+    max_len = max(len(l) for l in lines)
+    panel_width = padding * 2 + int(max_len * 7)
+
+    x0, y0 = x, y - line_height
+    x1, y1 = x0 + panel_width, y0 + panel_height
+
+    overlay = frame.copy()
+    cv2.rectangle(
+        overlay,
+        (x0, y0),
+        (x1, y1),
+        (0, 0, 0),
+        -1,
+    )
+    alpha = 0.5
+    cv2.addWeighted(overlay, alpha, frame, 1 - alpha, 0, frame)
+
+    for i, line in enumerate(lines):
+        yy = y + i * line_height
+        cv2.putText(
+            frame,
+            line,
+            (x + padding, yy),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.5,
+            (200, 255, 200),
+            1,
+            cv2.LINE_AA,
+        )
+
+
+def _activity_color(prob: float) -> tuple[int, int, int]:
+    if prob < 0.4:
+        return (0, 0, 255)
+    if prob < 0.7:
+        return (0, 255, 255)
+    return (0, 255, 0)
+
+
 def run_realtime_app(camera_index: int = 0) -> None:
     cap = cv2.VideoCapture(camera_index)
 
     if not cap.isOpened():
-        print(f"[UI] No se pudo abrir la cámara con índice {camera_index}")
+        print("[UI] No se pudo abrir la camara con indice", camera_index)
         return
 
-    # Intentar leer FPS de la cámara
     fps = cap.get(cv2.CAP_PROP_FPS)
     if fps is None or fps <= 0 or np.isnan(fps):
         fps = CAMERA_FPS_FALLBACK
 
-    print(f"[UI] FPS estimado de cámara: {fps}")
+    print("[UI] FPS estimado camara:", fps)
 
     predictor = RealtimeHARPredictor(fps=fps)
+    print("[UI] Predictor inicializado con modelo", predictor.artifacts.variant)
 
     mp_pose = mp_solutions.pose
 
@@ -38,10 +85,9 @@ def run_realtime_app(camera_index: int = 0) -> None:
         while True:
             ret, frame = cap.read()
             if not ret:
-                print("[UI] No se pudo leer frame de la cámara. Saliendo...")
+                print("[UI] No se pudo leer frame. Saliendo...")
                 break
 
-            # MediaPipe trabaja en RGB
             frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             result = pose.process(frame_rgb)
 
@@ -54,7 +100,6 @@ def run_realtime_app(camera_index: int = 0) -> None:
                 )
 
             if landmarks_dict is not None:
-                # Calcular visibilidad media (ignorando NaNs)
                 vis_vals = [
                     v["visibility"]
                     for v in landmarks_dict.values()
@@ -63,69 +108,84 @@ def run_realtime_app(camera_index: int = 0) -> None:
                 if vis_vals:
                     mean_vis = float(np.mean(vis_vals))
 
-                # Antes descartábamos frames con VISIBILITY_MIN muy alto (0.8).
-                # Ahora, mientras haya landmarks, SIEMPRE agregamos el frame
-                # al predictor, y usamos el umbral solo como info de calidad.
                 predictor.add_frame(landmarks_dict)
 
-                # Métricas de postura (si fallan, simplemente no mostramos nada extra)
                 try:
                     metrics = compute_posture_metrics(landmarks_dict)
                 except Exception as e:
                     metrics = {}
-                    print(f"[UI] Error en compute_posture_metrics: {e}")
+                    print("[UI] Error posture metrics:", e)
             else:
                 metrics = {}
 
-            # Intentar predecir
             pred = predictor.maybe_predict()
 
-            # ---------- Overlay en la imagen ----------
-            overlay_text_lines = []
+            # Panel principal
+            overlay_lines = [
+                f"Modelo: SVM {predictor.artifacts.variant} | FPS: {fps:.1f}"
+            ]
+
+            overlay_lines.append(f"Visibilidad media: {mean_vis:.2f}")
+            if mean_vis < VISIBILITY_MIN:
+                overlay_lines.append("Advertencia: baja visibilidad")
+
+            current_prob = None
 
             if pred is None:
-                overlay_text_lines.append(
-                    "Actividad: --- (sin actividad clara / calentando ventana)"
-                )
+                activity_text = "Actividad: --- (calentando ventana)"
+                overlay_lines.insert(1, activity_text)
             else:
                 label, prob = pred
-                overlay_text_lines.append(
-                    f"Actividad: {label} ({prob * 100:.1f}%)"
-                )
+                activity_text = f"Actividad: {label} ({prob*100:.1f}%)"
+                current_prob = prob
 
-            # Info de visibilidad
-            overlay_text_lines.append(f"Visibilidad media: {mean_vis:.2f}")
-            if mean_vis < VISIBILITY_MIN:
-                overlay_text_lines.append("⚠ Pose con visibilidad baja")
+            # Panel de metrica
+            metric_lines = []
+            if metrics:
+                metric_lines.append("Metricas postura:")
+                for k in ["trunk_inclination_deg", "knee_angle_l_deg", "knee_angle_r_deg"]:
+                    if k in metrics:
+                        try:
+                            metric_lines.append(f"  {k}: {float(metrics[k]):.1f}")
+                        except:
+                            metric_lines.append(f"  {k}: {metrics[k]}")
 
-            # Algunas métricas de postura, si existen
-            for k, v in metrics.items():
-                try:
-                    overlay_text_lines.append(f"{k}: {float(v):.1f}")
-                except Exception:
-                    overlay_text_lines.append(f"{k}: {v}")
+            _draw_info_panel(frame, overlay_lines, x=10, y=30)
 
-            # Dibujar texto en la parte superior izquierda
-            y0 = 20
-            dy = 20
-            for i, line in enumerate(overlay_text_lines):
-                y = y0 + i * dy
+            if metric_lines:
+                _draw_info_panel(frame, metric_lines, x=10, y=120)
+
+            # Texto de actividad coloreado
+            if pred is not None and current_prob is not None:
+                color = _activity_color(current_prob)
                 cv2.putText(
                     frame,
-                    line,
-                    (10, y),
+                    activity_text,
+                    (20, 80),
                     cv2.FONT_HERSHEY_SIMPLEX,
-                    0.5,
-                    (0, 255, 0),
-                    1,
+                    0.7,
+                    color,
+                    2,
                     cv2.LINE_AA,
                 )
 
-            cv2.imshow("HAR Realtime - Entrega 3", frame)
+            h, w, _ = frame.shape
+            cv2.putText(
+                frame,
+                "Pulsa 'q' para salir",
+                (10, h - 10),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.6,
+                (255, 255, 255),
+                1,
+                cv2.LINE_AA,
+            )
+
+            cv2.imshow("HAR Tiempo Real - SVM", frame)
 
             key = cv2.waitKey(1) & 0xFF
             if key == ord("q"):
-                print("[UI] Tecla 'q' presionada. Saliendo...")
+                print("[UI] Tecla q. Saliendo...")
                 break
 
     cap.release()

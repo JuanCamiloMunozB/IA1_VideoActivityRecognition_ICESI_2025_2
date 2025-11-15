@@ -14,6 +14,7 @@ from Entrega3.src.utils.config import (
     SVM_FULL_PATH,
     LABEL_ENCODER_PATH,
     SELECTED_FEATURES_PATH,
+    get_train_feature_columns, 
 )
 
 
@@ -40,7 +41,7 @@ def _load_json(path: Path) -> dict:
 
 def load_model_artifacts(prefer_reduced: bool = True) -> ModelArtifacts:
     """
-    Intenta cargar primero el modelo reducido (svm_reduced.joblib + selected_features.json).
+    Intenta cargar primero el modelo reducido (svm_reduced.joblib).
     Si no existe, cae al modelo full (svm_full.joblib) sin selección explícita de features.
 
     Retorna un ModelArtifacts con:
@@ -60,23 +61,51 @@ def load_model_artifacts(prefer_reduced: bool = True) -> ModelArtifacts:
         )
     label_encoder = joblib.load(LABEL_ENCODER_PATH)
 
+    # ------------------------------------------------------------
     # Intentar modelo reducido
-    if prefer_reduced and SVM_REDUCED_PATH.exists() and SELECTED_FEATURES_PATH.exists():
+    # ------------------------------------------------------------
+    if prefer_reduced and SVM_REDUCED_PATH.exists():
         model = joblib.load(SVM_REDUCED_PATH)
-        data = _load_json(SELECTED_FEATURES_PATH)
-        selected_features = data.get("selected_features", None)
-        if not selected_features:
-            raise ValueError(
-                f"selected_features.json no contiene 'selected_features' en {SELECTED_FEATURES_PATH}"
+
+        # Validamos que exista selected_features.json (documentación de K=70),
+        # pero NO usamos su lista de 70 columnas para recortar X, porque el
+        # SelectKBest ya está dentro del pipeline y espera 140 inputs.
+        if SELECTED_FEATURES_PATH.exists():
+            try:
+                _ = _load_json(SELECTED_FEATURES_PATH)
+            except Exception as e:
+                print(
+                    f"[load_model_artifacts] Advertencia: no se pudo leer "
+                    f"{SELECTED_FEATURES_PATH}: {e}. Esto NO afecta la inferencia."
+                )
+        else:
+            print(
+                f"[load_model_artifacts] Advertencia: no se encontró {SELECTED_FEATURES_PATH}. "
+                "La inferencia sigue funcionando, pero no se puede reportar el resumen de reducción."
             )
+
+        # 👉 Aquí está la clave: usamos las 140 columnas de entrenamiento
+        try:
+            train_feature_cols: Sequence[str] = get_train_feature_columns()
+        except FileNotFoundError as e:
+            # Hacemos el error más explícito para el usuario
+            raise FileNotFoundError(
+                f"{e}\n"
+                "Estas columnas son las que el pipeline reducido espera como entrada. "
+                "Copia features.csv desde Entrega2/experiments/results antes de ejecutar la UI."
+            )
+
         return ModelArtifacts(
             model=model,
             label_encoder=label_encoder,
-            selected_features=list(selected_features),
+            # PASAMOS LAS 140 FEATURES ORIGINALES, NO LAS 70 SELECCIONADAS
+            selected_features=list(train_feature_cols),
             variant="reduced",
         )
 
+    # ------------------------------------------------------------
     # Fallback: modelo full
+    # ------------------------------------------------------------
     if not SVM_FULL_PATH.exists():
         raise FileNotFoundError(
             f"No se encontró ni svm_reduced.joblib ni svm_full.joblib en {MODELS_DIR}.\n"
