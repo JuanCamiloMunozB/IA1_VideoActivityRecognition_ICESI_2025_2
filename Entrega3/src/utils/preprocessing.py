@@ -1,223 +1,265 @@
 from __future__ import annotations
 
-import importlib.util
-from typing import Dict, Any, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 import numpy as np
 import pandas as pd
 
-from Entrega3.src.utils.config import (
-    ENTREGA2_DIR,
-    WINDOW_SIZE_SEC,
-    WINDOW_STEP_SEC,
-    CAMERA_FPS_FALLBACK,
+# Importamos directamente las funciones y constantes de la Entrega 2
+from Entrega2.src.features.feature_engineering import (
+    aggregate_window_features,
+    normalize_landmarks_frame,
+    frame_visibility_ok,
+    DEFAULT_WINDOW_SIZE_SEC,
+    DEFAULT_WINDOW_STEP_SEC,
 )
 
+# ============================================================
+# Constantes
+# ============================================================
 
-# ================== Carga dinámica de aggregate_window_features (Entrega2) ==================
+# Lista de nombres estándar de los 33 landmarks de MediaPipe Pose
+POSE_LANDMARK_NAMES: List[str] = [
+    "nose",                # 0
+    "left_eye_inner",      # 1
+    "left_eye",            # 2
+    "left_eye_outer",      # 3
+    "right_eye_inner",     # 4
+    "right_eye",           # 5
+    "right_eye_outer",     # 6
+    "left_ear",            # 7
+    "right_ear",           # 8
+    "mouth_left",          # 9
+    "mouth_right",         # 10
+    "left_shoulder",       # 11
+    "right_shoulder",      # 12
+    "left_elbow",          # 13
+    "right_elbow",         # 14
+    "left_wrist",          # 15
+    "right_wrist",         # 16
+    "left_pinky",          # 17
+    "right_pinky",         # 18
+    "left_index",          # 19
+    "right_index",         # 20
+    "left_thumb",          # 21
+    "right_thumb",         # 22
+    "left_hip",            # 23
+    "right_hip",           # 24
+    "left_knee",           # 25
+    "right_knee",          # 26
+    "left_ankle",          # 27
+    "right_ankle",         # 28
+    "left_heel",           # 29
+    "right_heel",          # 30
+    "left_foot_index",     # 31
+    "right_foot_index",    # 32
+]
 
+CAMERA_FPS_FALLBACK: float = 30.0
 
-def _load_feature_engineering_module():
-    """
-    Carga dinámicamente Entrega2/src/features/feature_engineering.py
-    para reutilizar aggregate_window_features sin tocar la Entrega2.
-    """
-    fe_path = ENTREGA2_DIR / "src" / "features" / "feature_engineering.py"
-    if not fe_path.exists():
-        raise FileNotFoundError(f"No se encontró archivo: {fe_path}")
-
-    spec = importlib.util.spec_from_file_location("feature_engineering_e2", fe_path)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)  # type: ignore[attr-defined]
-    return module
-
-
-_feature_engineering_module = None
-
-
-def get_aggregate_window_features():
-    global _feature_engineering_module
-    if _feature_engineering_module is None:
-        _feature_engineering_module = _load_feature_engineering_module()
-
-    if not hasattr(_feature_engineering_module, "aggregate_window_features"):
-        raise AttributeError(
-            "El módulo feature_engineering de Entrega2 no define aggregate_window_features."
-        )
-
-    return _feature_engineering_module.aggregate_window_features
-
-
-# ================== Columnas reales de entrenamiento (SVM Entrega2) ==================
-
-_TRAIN_FEATURE_COLUMNS: Optional[List[str]] = None
-
-
-def get_training_feature_columns() -> List[str]:
-    """
-    Devuelve las columnas EXACTAS usadas para entrenar el modelo SVM reducido.
-
-    Confirmado con tu features.csv:
-    - Total columnas: 144
-    - Columnas meta que NO van al modelo: video_id, label, frame_start, frame_end
-    - → 144 - 4 = 140 features de entrada para el pipeline (antes de SelectKBest).
-    """
-    global _TRAIN_FEATURE_COLUMNS
-    if _TRAIN_FEATURE_COLUMNS is not None:
-        return _TRAIN_FEATURE_COLUMNS
-
-    csv_path = ENTREGA2_DIR / "experiments" / "results" / "features.csv"
-    if not csv_path.exists():
-        raise FileNotFoundError(f"No se encontró features.csv en {csv_path}")
-
-    df_head = pd.read_csv(csv_path, nrows=1)
-
-    # MUY IMPORTANTE: estas 4 columnas no se usaron para entrenar
-    meta_cols = {"video_id", "label", "frame_start", "frame_end"}
-
-    cols = [c for c in df_head.columns if c not in meta_cols]
-
-    if len(cols) != 140:
-        raise ValueError(
-            f"Se esperaban 140 columnas de características, pero se encontraron {len(cols)}.\n"
-            f"Columnas detectadas: {cols}"
-        )
-
-    _TRAIN_FEATURE_COLUMNS = cols
-    return cols
+# ============================================================
+# 1. MediaPipe → diccionario de landmarks
+# ============================================================
 
 
-# ================== MediaPipe landmarks → diccionario ==================
-
-
-def build_landmarks_dict_from_mediapipe(pose_landmarks):
-    """
-    Convierte los landmarks de MediaPipe Pose en el diccionario que usa todo el pipeline.
-    """
-    if pose_landmarks is None:
-        return None
-
-    # Compatibilidad con mediapipe 0.10.x (algunas distros usan mediapipe.python.solutions)
-    try:
-        from mediapipe.solutions.pose import PoseLandmark
-    except Exception:
-        from mediapipe.python.solutions.pose import PoseLandmark
-
-    lm = pose_landmarks.landmark
-
-    def p(idx):
-        pt = lm[idx]
-        return {
-            "x": float(pt.x),
-            "y": float(pt.y),
-            "z": float(pt.z),
-            "visibility": float(pt.visibility),
-        }
-
-    try:
-        data = {
-            "left_shoulder": p(PoseLandmark.LEFT_SHOULDER),
-            "right_shoulder": p(PoseLandmark.RIGHT_SHOULDER),
-            "left_hip": p(PoseLandmark.LEFT_HIP),
-            "right_hip": p(PoseLandmark.RIGHT_HIP),
-            "left_knee": p(PoseLandmark.LEFT_KNEE),
-            "right_knee": p(PoseLandmark.RIGHT_KNEE),
-            "left_ankle": p(PoseLandmark.LEFT_ANKLE),
-            "right_ankle": p(PoseLandmark.RIGHT_ANKLE),
-            "left_wrist": p(PoseLandmark.LEFT_WRIST),
-            "right_wrist": p(PoseLandmark.RIGHT_WRIST),
-            "left_ear": p(PoseLandmark.LEFT_EAR),
-            "right_ear": p(PoseLandmark.RIGHT_EAR),
-        }
-    except Exception:
-        return None
-
-    # head = promedio de orejas
-    le = data["left_ear"]
-    re = data["right_ear"]
-    data["head"] = {
-        "x": (le["x"] + re["x"]) / 2.0,
-        "y": (le["y"] + re["y"]) / 2.0,
-        "z": (le["z"] + re["z"]) / 2.0,
-        "visibility": (le["visibility"] + re["visibility"]) / 2.0,
+def _landmark_proto_to_dict(lm: Any) -> Dict[str, float]:
+    """Convierte un landmark de MediaPipe a un dict simple."""
+    return {
+        "x": float(getattr(lm, "x", 0.0)),
+        "y": float(getattr(lm, "y", 0.0)),
+        "z": float(getattr(lm, "z", 0.0)),
+        "visibility": float(getattr(lm, "visibility", 1.0)),
     }
+
+
+def build_landmarks_dict_from_mediapipe(results: Any) -> Optional[Dict[str, Dict[str, float]]]:
+    """
+    Convierte la salida de MediaPipe Pose a un diccionario:
+
+    {
+        "nose": {"x":..., "y":..., "z":..., "visibility":...},
+        "left_shoulder": {...},
+        ...
+        "head": {...}  # promedio de left_ear y right_ear
+    }
+
+    Soporta dos casos:
+    - results es el objeto completo devuelto por MediaPipe (tiene .pose_landmarks)
+    - results es directamente un NormalizedLandmarkList (tiene .landmark)
+    """
+    if results is None:
+        return None
+
+    # 1) Si nos pasan el objeto completo de MediaPipe
+    if hasattr(results, "pose_landmarks"):
+        mp_landmarks = results.pose_landmarks
+    else:
+        mp_landmarks = results
+
+    if mp_landmarks is None:
+        return None
+
+    # 2) Obtenemos la lista de landmarks
+    if hasattr(mp_landmarks, "landmark"):
+        lm_list = mp_landmarks.landmark
+    else:
+        # Si no tiene .landmark, intentamos iterar directamente
+        try:
+            lm_list = list(mp_landmarks)
+        except TypeError:
+            # No es iterable, no podemos hacer nada
+            return None
+
+    data: Dict[str, Dict[str, float]] = {}
+
+    for idx, lm in enumerate(lm_list):
+        if idx < len(POSE_LANDMARK_NAMES):
+            name = POSE_LANDMARK_NAMES[idx]
+        else:
+            name = f"landmark_{idx}"
+
+        data[name] = _landmark_proto_to_dict(lm)
+
+    # Landmark sintético "head" (promedio de las orejas)
+    if "left_ear" in data and "right_ear" in data:
+        le = data["left_ear"]
+        re = data["right_ear"]
+        data["head"] = {
+            "x": (le["x"] + re["x"]) / 2.0,
+            "y": (le["y"] + re["y"]) / 2.0,
+            "z": (le["z"] + re["z"]) / 2.0,
+            "visibility": (le["visibility"] + re["visibility"]) / 2.0,
+        }
 
     return data
 
 
-# ================== Normalización de frames para aggregate_window_features ==================
+# ============================================================
+# 2. Normalización de frames (misma lógica que Entrega 2)
+# ============================================================
 
 
-def _normalize_frames(frames: List[Dict[str, Any]], fps: float) -> List[Dict[str, Any]]:
+def _normalize_frames(
+    frames: List[Dict[str, Any]],
+    fps: Optional[float],
+) -> List[Dict[str, Any]]:
+    """
+    Añade 'landmarks_norm' a cada frame usando normalize_landmarks_frame de la Entrega 2
+    y filtra los frames con visibilidad muy baja mediante frame_visibility_ok.
+
+    Cada frame:
+    {
+        "video_id": str,
+        "frame_index": int,
+        "timestamp": float,
+        "landmarks": { ... }
+    }
+    """
     if fps is None or fps <= 0:
         fps = CAMERA_FPS_FALLBACK
 
-    out: List[Dict[str, Any]] = []
-    for i, fr in enumerate(frames):
-        fr = dict(fr)
+    normalized_frames: List[Dict[str, Any]] = []
 
-        fr.setdefault("video_id", "live_session")
-        fr.setdefault("frame_index", i)
-        fr.setdefault("timestamp", i / fps)
-        fr.setdefault("t_start", i / fps)
-        fr.setdefault("t_end", (i + 1) / fps)
+    for fr in frames:
+        landmarks = fr.get("landmarks")
+        if not isinstance(landmarks, dict) or not landmarks:
+            continue
 
-        landmarks = fr.get("landmarks", {}) or {}
-        fr["landmarks"] = landmarks
+        # Misma verificación de visibilidad que en Entrega 2
+        if not frame_visibility_ok(landmarks):
+            continue
 
-        fr["visible_landmarks"] = [
-            k for k, v in landmarks.items()
-            if isinstance(v, dict) and v.get("visibility", 0.0) >= 0.5
-        ]
+        try:
+            landmarks_norm = normalize_landmarks_frame(landmarks)
+        except Exception:
+            # Si algo falla, usamos los landmarks crudos para no romper
+            landmarks_norm = landmarks
 
-        out.append(fr)
+        new_fr = dict(fr)
+        new_fr["landmarks_norm"] = landmarks_norm
 
-    return out
+        if "frame_index" not in new_fr:
+            new_fr["frame_index"] = len(normalized_frames)
+
+        if "timestamp" not in new_fr:
+            new_fr["timestamp"] = new_fr["frame_index"] / fps
+
+        normalized_frames.append(new_fr)
+
+    return normalized_frames
 
 
-# ================== Frames → vector de características para el modelo ==================
+# ============================================================
+# 3. Frames → vector de características (para el SVM)
+# ============================================================
 
+from typing import Any, Dict, List, Optional, Tuple
+
+import numpy as np
+import pandas as pd
+
+# Asegúrate de tener estos imports arriba en el archivo:
+# from Entrega2.src.features.feature_engineering import aggregate_window_features
+# from Entrega3.src.config import (
+#     CAMERA_FPS_FALLBACK,
+#     DEFAULT_WINDOW_SIZE_SEC,
+#     DEFAULT_WINDOW_STEP_SEC,
+# )
 
 def frames_to_feature_vector(
     frames: List[Dict[str, Any]],
     fps: Optional[float],
-    selected_features: Optional[List[str]] = None,  # se ignora: el SelectKBest interno se encarga
+    selected_features: Optional[List[str]] = None,
 ) -> Optional[Tuple[np.ndarray, List[str]]]:
     """
-    Toma una lista de frames y genera un vector con EXACTAMENTE las 140 features
-    que el pipeline reducido espera como entrada (antes de SelectKBest).
+    Convierte una lista de frames con landmarks a un vector de características
+    listo para pasar al pipeline clásico (con SelectKBest, StandardScaler, SVC).
 
-    Retorna:
-        X: np.ndarray con shape (1, 140)
-        feature_names: lista de columnas en el mismo orden
+    Devuelve:
+      - None si no se pudo construir nada útil.
+      - (X, feature_names) si todo salió bien:
+          X: np.ndarray de shape (1, n_features)
+          feature_names: lista de nombres de columnas en el mismo orden que X.
     """
-    if not frames:
-        return None
-
     if fps is None or fps <= 0:
         fps = CAMERA_FPS_FALLBACK
 
-    frames_norm = _normalize_frames(frames, fps)
+    # Normalizar frames (usa tu función ya existente)
+    norm_frames = _normalize_frames(frames, fps=fps)
 
-    agg_fn = get_aggregate_window_features()
-    df = agg_fn(
-        frames=frames_norm,
-        fps=float(fps),
-        win_sec=WINDOW_SIZE_SEC,
-        step_sec=WINDOW_STEP_SEC,
-    )
-
-    if df is None or df.empty:
+    if not norm_frames:
         return None
 
-    last_row = df.iloc[-1]
+    # Agregar características por ventana usando la lógica de Entrega 2
+    feats_df: pd.DataFrame = aggregate_window_features(
+        norm_frames,
+        fps,
+        DEFAULT_WINDOW_SIZE_SEC,
+        DEFAULT_WINDOW_STEP_SEC,
+    )
 
-    train_cols = get_training_feature_columns()
+    if feats_df is None or feats_df.empty:
+        return None
 
-    # reindex para tener las 140 columnas exactas, rellenando faltantes con 0
-    row_for_model = last_row.reindex(train_cols, fill_value=0.0)
+    # Tomamos la última ventana (la más reciente)
+    last_window = feats_df.iloc[[-1]].copy()
 
-    X = row_for_model.to_numpy(dtype=float).reshape(1, -1)
-    X = np.nan_to_num(X, nan=0.0, posinf=0.0, neginf=0.0)
+    # MUY IMPORTANTE:
+    # Si nos pasan selected_features, el pipeline espera EXACTAMENTE
+    # len(selected_features) columnas, en ese orden.
+    # Reindexamos para:
+    #   - Crear las columnas faltantes con 0.0
+    #   - Reordenar columnas al orden esperado por el modelo.
+    if selected_features is not None:
+        last_window = last_window.reindex(columns=selected_features, fill_value=0.0)
 
-    return X, train_cols
+    # Evitar NaNs e infinitos
+    last_window = last_window.replace([np.inf, -np.inf], np.nan).fillna(0.0)
+
+    # Guardamos los nombres de features en el orden correcto
+    feature_names: List[str] = list(last_window.columns)
+
+    # Convertimos a ndarray
+    X = last_window.to_numpy(dtype=np.float32)  # shape (1, n_features)
+
+    return X, feature_names

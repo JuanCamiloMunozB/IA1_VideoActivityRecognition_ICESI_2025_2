@@ -1,137 +1,143 @@
 from __future__ import annotations
 
 from collections import deque
-from typing import Dict, Any, Optional, Tuple
+from typing import Dict, Any, Optional, Tuple, Deque, List
 
 import numpy as np
-import warnings
 
-from Entrega3.src.models.load_artifacts import load_model_artifacts
-from Entrega3.src.utils.config import WINDOW_SIZE_SEC, LIVE_VIDEO_ID, MIN_PREDICTION_PROB
+from Entrega3.src.models.load_artifacts import load_model_artifacts, ModelArtifacts
+from Entrega3.src.utils.config import WINDOW_SIZE_SEC, LIVE_VIDEO_ID
 from Entrega3.src.utils.preprocessing import frames_to_feature_vector
-
-# ================== Filtros de warnings heredados de Entrega2 ==================
-# No queremos tocar Entrega2/src/features/feature_engineering.py, pero sus
-# funciones usan np.nanmean / np.nanquantile sobre slices que a veces quedan
-# vacíos en tiempo real → generan RuntimeWarning que no afectan el flujo.
-warnings.filterwarnings(
-    "ignore",
-    message="Mean of empty slice",
-    category=RuntimeWarning,
-)
-warnings.filterwarnings(
-    "ignore",
-    message="All-NaN slice encountered",
-    category=RuntimeWarning,
-)
-warnings.filterwarnings(
-    "ignore",
-    message="X does not have valid feature names, but SelectKBest was fitted with feature names",
-    category=UserWarning,
-)
 
 
 class RealtimeHARPredictor:
-    def __init__(self, fps: float, max_seconds_buffer: float = 3.0, prefer_reduced: bool = True):
-        """
-        Predictor en tiempo real que acumula frames y dispara predicciones
-        cuando hay suficiente ventana temporal.
-        """
-        self.fps = fps if fps and fps > 0 else 30.0
-        self.frames: deque[Dict[str, Any]] = deque(maxlen=int(self.fps * max_seconds_buffer))
-        self.counter: int = 0
+    """
+    Administra un buffer de frames y ejecuta el pipeline SVM cuando hay
+    suficiente información para una ventana deslizante.
+    """
 
-        self.artifacts = load_model_artifacts(prefer_reduced=prefer_reduced)
-        print(f"[RealtimeHARPredictor] Modelo cargado: {self.artifacts.variant}")
-        self._last_label: Optional[str] = None
-        self._last_prob: float = 0.0
+    def __init__(self, fps: float) -> None:
+        if fps is None or fps <= 0:
+            fps = 30.0
+        self.fps: float = float(fps)
 
-    def add_frame(self, landmarks: Dict[str, Dict[str, float]]) -> None:
-        """
-        Agrega un frame al buffer interno.
-        """
-        self.counter += 1
-        idx = self.counter
-        fps = self.fps
+        # Guardamos hasta 3 ventanas completas por si aggregate_window_features
+        # usa stride / solapamiento.
+        max_len = int(self.fps * WINDOW_SIZE_SEC * 3)
+        self.frames: Deque[Dict[str, Any]] = deque(maxlen=max_len)
 
-        self.frames.append(
-            {
-                "video_id": LIVE_VIDEO_ID,
-                "frame_index": idx,
-                "timestamp": idx / fps,
-                "t_start": idx / fps,
-                "t_end": (idx + 1) / fps,
-                "landmarks": landmarks,
-            }
+        # Carga de modelo + encoder + selected_features
+        self.artifacts: ModelArtifacts = load_model_artifacts(prefer_reduced=True)
+        print(
+            f"[RealtimeHARPredictor] Modelo cargado: {self.artifacts.variant} "
+            f"(fps={self.fps}, buffer_max={max_len})"
         )
+
+        # Contador para asignar frame_index y timestamp incremental
+        self._frame_counter: int = 0
+        self._last_timestamp: float = 0.0
+
+    # ------------ Gestión de frames ------------
+
+    def add_frame(
+        self,
+        landmarks: Dict[str, Dict[str, float]],
+        *,
+        timestamp: Optional[float] = None,
+        frame_index: Optional[int] = None,
+    ) -> None:
+        """
+        Añade un frame al buffer interno. Si no se dan timestamp/frame_index,
+        se generan de forma incremental.
+        """
+        if landmarks is None:
+            return
+
+        if frame_index is None:
+            frame_index = self._frame_counter
+            self._frame_counter += 1
+
+        if timestamp is None:
+            # timestamp aprox en segundos
+            if len(self.frames) == 0:
+                timestamp = 0.0
+            else:
+                timestamp = self._last_timestamp + 1.0 / self.fps
+
+        self._last_timestamp = float(timestamp)
+
+        frame = {
+            "video_id": LIVE_VIDEO_ID,
+            "frame_index": int(frame_index),
+            "timestamp": float(timestamp),
+            "landmarks": landmarks,
+        }
+        self.frames.append(frame)
+
+    # ------------ Predicción ------------
 
     def maybe_predict(self) -> Optional[Tuple[str, float]]:
         """
-        Si hay suficientes frames para al menos una ventana, genera una predicción.
-        Devuelve (label, prob) o None si aún no hay suficientes datos o la
-        predicción es de muy baja confianza.
+        Intenta generar una predicción si hay suficientes frames.
+
+        Devuelve:
+            (label, prob_max) o None si NO se puede predecir todavía.
         """
         min_frames = int(self.fps * WINDOW_SIZE_SEC)
         n_frames = len(self.frames)
 
-        if n_frames < min_frames:
-            # Evitar spamear el log cuando aún no ha entrado ningún frame al buffer
-            if n_frames > 0 and n_frames % 30 == 0:
-                print(f"[RealtimeHARPredictor] Calentando ventana: {n_frames}/{min_frames} frames")
+        if n_frames < max(min_frames, 10):
+            # Mensaje de calentamiento cada 30 frames para no llenar la consola
+            if n_frames % 30 == 0:
+                print(
+                    f"[RealtimeHARPredictor] Calentando ventana: "
+                    f"{n_frames}/{min_frames} frames"
+                )
             return None
 
-        out = frames_to_feature_vector(list(self.frames), self.fps)
+        # Usamos TODOS los frames del buffer (últimos N serán usados por la ventana)
+        frames_list: List[Dict[str, Any]] = list(self.frames)
+
+        out = frames_to_feature_vector(
+            frames_list,
+            fps=self.fps,
+            selected_features=self.artifacts.selected_features,
+        )
         if out is None:
-            # Esto significa que aggregate_window_features devolvió vacío
-            print("[RealtimeHARPredictor] frames_to_feature_vector devolvió None (sin ventana válida)")
+            # Ya hay bastantes frames, pero la ventana aún no generó features válidas
+            print(
+                "[RealtimeHARPredictor] frames_to_feature_vector devolvió None "
+                "(probablemente ventana sin datos suficientes)."
+            )
             return None
 
-        X, _ = out
+        X, feature_names = out
+
+        if X.shape[1] != len(feature_names):
+            print(
+                f"[RealtimeHARPredictor] Inconsistencia: X tiene {X.shape[1]} "
+                f"features pero feature_names tiene {len(feature_names)}."
+            )
+            return None
+
         model = self.artifacts.model
 
-        # 1. Predicción cruda del modelo
+        # Obtener probabilidades o scores
         if hasattr(model, "predict_proba"):
-            proba = model.predict_proba(X)[0]
-            idx = int(np.argmax(proba))
-            pred_raw = model.classes_[idx]
-            prob = float(proba[idx])
+            probs = model.predict_proba(X)[0]
         else:
-            pred_raw = model.predict(X)[0]
-            prob = 0.0
+            # Fallback: usamos decision_function y le aplicamos softmax
+            scores = model.decision_function(X)[0]
+            scores = np.array(scores, dtype=np.float32)
+            if scores.ndim == 0:
+                scores = np.array([scores, -scores], dtype=np.float32)
+            scores = scores - scores.max()
+            exp_scores = np.exp(scores)
+            probs = exp_scores / exp_scores.sum()
 
-        # 2. Intentar decodificar con el LabelEncoder
-        encoder = self.artifacts.label_encoder
-        label: str
+        best_idx = int(np.argmax(probs))
+        best_prob = float(probs[best_idx])
 
-        try:
-            # Caso típico: y original se codificó con LabelEncoder → enteros
-            if np.issubdtype(type(pred_raw), np.integer):
-                label = encoder.inverse_transform([pred_raw])[0]
-            else:
-                # Caso alternativo: pipeline con strings directos
-                if hasattr(encoder, "classes_") and pred_raw in encoder.classes_:
-                    pos = int(np.where(encoder.classes_ == pred_raw)[0][0])
-                    label = encoder.inverse_transform([pos])[0]
-                else:
-                    label = str(pred_raw)
-        except Exception:
-            # Fallback defensivo
-            label = str(pred_raw)
-
-        # 3. Aplicar umbral de confianza
-        if prob < MIN_PREDICTION_PROB:
-            # Guardamos prob pero indicamos que la predicción es poco confiable.
-            print(
-                f"[RealtimeHARPredictor] Predicción de baja confianza ignorada: "
-                f"{label} (p={prob:.3f} < {MIN_PREDICTION_PROB:.2f})"
-            )
-            self._last_label = None
-            self._last_prob = prob
-            return None
-
-        self._last_label = label
-        self._last_prob = prob
-
-        print(f"[RealtimeHARPredictor] Predicción en vivo: {label} (p={prob:.3f})")
-
-        return label, prob
+        # Mapear índice → label original
+        label = self.artifacts.label_encoder.inverse_transform([best_idx])[0]
+        return label, best_prob

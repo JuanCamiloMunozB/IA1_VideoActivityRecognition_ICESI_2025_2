@@ -11,120 +11,125 @@ from Entrega3.src.online.realtime_inference import RealtimeHARPredictor
 from Entrega3.src.online.posture_metrics import compute_posture_metrics
 
 
-def _default_metrics() -> dict:
-    return {
-        "trunk_inclination_deg": 0.0,
-        "knee_angle_l_deg": 0.0,
-        "knee_angle_r_deg": 0.0,
-    }
-
-
 def run_realtime_app(camera_index: int = 0) -> None:
+    cap = cv2.VideoCapture(camera_index)
+
+    if not cap.isOpened():
+        print(f"[UI] No se pudo abrir la cámara con índice {camera_index}")
+        return
+
+    # Intentar leer FPS de la cámara
+    fps = cap.get(cv2.CAP_PROP_FPS)
+    if fps is None or fps <= 0 or np.isnan(fps):
+        fps = CAMERA_FPS_FALLBACK
+
+    print(f"[UI] FPS estimado de cámara: {fps}")
+
+    predictor = RealtimeHARPredictor(fps=fps)
+
     mp_pose = mp_solutions.pose
-    pose = mp_pose.Pose(
+
+    with mp_pose.Pose(
         model_complexity=1,
         enable_segmentation=False,
         min_detection_confidence=0.5,
         min_tracking_confidence=0.5,
-    )
-
-    cap = cv2.VideoCapture(camera_index)
-    if not cap.isOpened():
-        raise RuntimeError(f"No se pudo abrir la cámara en el índice {camera_index}.")
-
-    fps = cap.get(cv2.CAP_PROP_FPS)
-    if fps <= 1.0:
-        fps = CAMERA_FPS_FALLBACK
-    print(f"[UI] FPS estimado de cámara: {fps:.1f}")
-
-    predictor = RealtimeHARPredictor(fps=fps, max_seconds_buffer=3.0, prefer_reduced=True)
-
-    try:
+    ) as pose:
         while True:
             ret, frame = cap.read()
             if not ret:
-                print("[UI] No se pudo leer frame de la cámara. Saliendo.")
+                print("[UI] No se pudo leer frame de la cámara. Saliendo...")
                 break
 
-            # BGR → RGB para MediaPipe
-            rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            result = pose.process(rgb)
+            # MediaPipe trabaja en RGB
+            frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            result = pose.process(frame_rgb)
 
             landmarks_dict = None
-            if result.pose_landmarks is not None:
-                landmarks_dict = build_landmarks_dict_from_mediapipe(result.pose_landmarks)
+            mean_vis = 0.0
 
-            # Por defecto, métricas en cero
-            metrics = _default_metrics()
+            if result.pose_landmarks is not None:
+                landmarks_dict = build_landmarks_dict_from_mediapipe(
+                    result.pose_landmarks
+                )
 
             if landmarks_dict is not None:
-                # Filtrar por visibilidad mínima promedio de puntos clave
-                vis_vals = [v.get("visibility", 0.0) for v in landmarks_dict.values()]
-                mean_vis = float(np.mean(vis_vals)) if vis_vals else 0.0
+                # Calcular visibilidad media (ignorando NaNs)
+                vis_vals = [
+                    v["visibility"]
+                    for v in landmarks_dict.values()
+                    if not np.isnan(v["visibility"])
+                ]
+                if vis_vals:
+                    mean_vis = float(np.mean(vis_vals))
 
-                # SOLO alimentamos el predictor si la visibilidad es razonable.
-                # Esto reduce las ventanas llenas de landmarks "vacíos"
-                # que en Entrega2 terminan generando NaNs y warnings.
-                if mean_vis >= VISIBILITY_MIN:
-                    predictor.add_frame(landmarks_dict)
+                # Antes descartábamos frames con VISIBILITY_MIN muy alto (0.8).
+                # Ahora, mientras haya landmarks, SIEMPRE agregamos el frame
+                # al predictor, y usamos el umbral solo como info de calidad.
+                predictor.add_frame(landmarks_dict)
+
+                # Métricas de postura (si fallan, simplemente no mostramos nada extra)
+                try:
                     metrics = compute_posture_metrics(landmarks_dict)
-                else:
-                    metrics = _default_metrics()
-
-            pred = predictor.maybe_predict()
-            if pred is not None:
-                label, prob = pred
-                text = f"Actividad: {label}  (conf: {prob:0.2f})"
+                except Exception as e:
+                    metrics = {}
+                    print(f"[UI] Error en compute_posture_metrics: {e}")
             else:
-                text = "Actividad: --- (sin actividad clara / calentando ventana)"
+                metrics = {}
 
-            # Dibujar texto y métricas en el frame
-            overlay = frame.copy()
-            cv2.rectangle(overlay, (10, 10), (520, 130), (0, 0, 0), thickness=-1)
-            alpha = 0.5
-            frame = cv2.addWeighted(overlay, alpha, frame, 1 - alpha, 0)
+            # Intentar predecir
+            pred = predictor.maybe_predict()
 
-            cv2.putText(
-                frame,
-                text,
-                (20, 40),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.7,
-                (0, 255, 0),
-                2,
-                cv2.LINE_AA,
-            )
-            cv2.putText(
-                frame,
-                f"Inclinacion tronco: {metrics['trunk_inclination_deg']:.1f}°",
-                (20, 70),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.6,
-                (255, 255, 255),
-                1,
-                cv2.LINE_AA,
-            )
-            cv2.putText(
-                frame,
-                f"Rodilla L: {metrics['knee_angle_l_deg']:.1f}° | R: {metrics['knee_angle_r_deg']:.1f}°",
-                (20, 95),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.6,
-                (255, 255, 255),
-                1,
-                cv2.LINE_AA,
-            )
+            # ---------- Overlay en la imagen ----------
+            overlay_text_lines = []
 
-            cv2.imshow("HAR – Entrega 3 (IA1)", frame)
+            if pred is None:
+                overlay_text_lines.append(
+                    "Actividad: --- (sin actividad clara / calentando ventana)"
+                )
+            else:
+                label, prob = pred
+                overlay_text_lines.append(
+                    f"Actividad: {label} ({prob * 100:.1f}%)"
+                )
+
+            # Info de visibilidad
+            overlay_text_lines.append(f"Visibilidad media: {mean_vis:.2f}")
+            if mean_vis < VISIBILITY_MIN:
+                overlay_text_lines.append("⚠ Pose con visibilidad baja")
+
+            # Algunas métricas de postura, si existen
+            for k, v in metrics.items():
+                try:
+                    overlay_text_lines.append(f"{k}: {float(v):.1f}")
+                except Exception:
+                    overlay_text_lines.append(f"{k}: {v}")
+
+            # Dibujar texto en la parte superior izquierda
+            y0 = 20
+            dy = 20
+            for i, line in enumerate(overlay_text_lines):
+                y = y0 + i * dy
+                cv2.putText(
+                    frame,
+                    line,
+                    (10, y),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.5,
+                    (0, 255, 0),
+                    1,
+                    cv2.LINE_AA,
+                )
+
+            cv2.imshow("HAR Realtime - Entrega 3", frame)
 
             key = cv2.waitKey(1) & 0xFF
             if key == ord("q"):
+                print("[UI] Tecla 'q' presionada. Saliendo...")
                 break
 
-    finally:
-        cap.release()
-        pose.close()
-        cv2.destroyAllWindows()
+    cap.release()
+    cv2.destroyAllWindows()
 
 
 if __name__ == "__main__":
