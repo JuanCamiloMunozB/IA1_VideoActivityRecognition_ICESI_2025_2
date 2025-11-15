@@ -4,10 +4,31 @@ from collections import deque
 from typing import Dict, Any, Optional, Tuple
 
 import numpy as np
+import warnings
 
 from Entrega3.src.models.load_artifacts import load_model_artifacts
-from Entrega3.src.utils.config import WINDOW_SIZE_SEC, LIVE_VIDEO_ID
+from Entrega3.src.utils.config import WINDOW_SIZE_SEC, LIVE_VIDEO_ID, MIN_PREDICTION_PROB
 from Entrega3.src.utils.preprocessing import frames_to_feature_vector
+
+# ================== Filtros de warnings heredados de Entrega2 ==================
+# No queremos tocar Entrega2/src/features/feature_engineering.py, pero sus
+# funciones usan np.nanmean / np.nanquantile sobre slices que a veces quedan
+# vacíos en tiempo real → generan RuntimeWarning que no afectan el flujo.
+warnings.filterwarnings(
+    "ignore",
+    message="Mean of empty slice",
+    category=RuntimeWarning,
+)
+warnings.filterwarnings(
+    "ignore",
+    message="All-NaN slice encountered",
+    category=RuntimeWarning,
+)
+warnings.filterwarnings(
+    "ignore",
+    message="X does not have valid feature names, but SelectKBest was fitted with feature names",
+    category=UserWarning,
+)
 
 
 class RealtimeHARPredictor:
@@ -47,7 +68,8 @@ class RealtimeHARPredictor:
     def maybe_predict(self) -> Optional[Tuple[str, float]]:
         """
         Si hay suficientes frames para al menos una ventana, genera una predicción.
-        Devuelve (label, prob) o None si aún no hay suficientes datos.
+        Devuelve (label, prob) o None si aún no hay suficientes datos o la
+        predicción es de muy baja confianza.
         """
         min_frames = int(self.fps * WINDOW_SIZE_SEC)
         n_frames = len(self.frames)
@@ -82,16 +104,30 @@ class RealtimeHARPredictor:
         label: str
 
         try:
+            # Caso típico: y original se codificó con LabelEncoder → enteros
             if np.issubdtype(type(pred_raw), np.integer):
                 label = encoder.inverse_transform([pred_raw])[0]
             else:
+                # Caso alternativo: pipeline con strings directos
                 if hasattr(encoder, "classes_") and pred_raw in encoder.classes_:
                     pos = int(np.where(encoder.classes_ == pred_raw)[0][0])
                     label = encoder.inverse_transform([pos])[0]
                 else:
                     label = str(pred_raw)
         except Exception:
+            # Fallback defensivo
             label = str(pred_raw)
+
+        # 3. Aplicar umbral de confianza
+        if prob < MIN_PREDICTION_PROB:
+            # Guardamos prob pero indicamos que la predicción es poco confiable.
+            print(
+                f"[RealtimeHARPredictor] Predicción de baja confianza ignorada: "
+                f"{label} (p={prob:.3f} < {MIN_PREDICTION_PROB:.2f})"
+            )
+            self._last_label = None
+            self._last_prob = prob
+            return None
 
         self._last_label = label
         self._last_prob = prob

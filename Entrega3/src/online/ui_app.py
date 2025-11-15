@@ -62,15 +62,13 @@ def run_realtime_app(camera_index: int = 0) -> None:
                 vis_vals = [v.get("visibility", 0.0) for v in landmarks_dict.values()]
                 mean_vis = float(np.mean(vis_vals)) if vis_vals else 0.0
 
-                # Siempre alimentamos el predictor para que la ventana se "llene".
-                predictor.add_frame(landmarks_dict)
-
-                # Las métricas solo se consideran confiables si la visibilidad promedio
-                # supera el umbral (para no mostrar valores raros en la UI).
+                # SOLO alimentamos el predictor si la visibilidad es razonable.
+                # Esto reduce las ventanas llenas de landmarks "vacíos"
+                # que en Entrega2 terminan generando NaNs y warnings.
                 if mean_vis >= VISIBILITY_MIN:
+                    predictor.add_frame(landmarks_dict)
                     metrics = compute_posture_metrics(landmarks_dict)
                 else:
-                    # Métricas en cero si la pose es de baja calidad
                     metrics = _default_metrics()
 
             pred = predictor.maybe_predict()
@@ -78,11 +76,11 @@ def run_realtime_app(camera_index: int = 0) -> None:
                 label, prob = pred
                 text = f"Actividad: {label}  (conf: {prob:0.2f})"
             else:
-                text = "Actividad: --- (calentando ventana...)"
+                text = "Actividad: --- (sin actividad clara / calentando ventana)"
 
             # Dibujar texto y métricas en el frame
             overlay = frame.copy()
-            cv2.rectangle(overlay, (10, 10), (450, 120), (0, 0, 0), thickness=-1)
+            cv2.rectangle(overlay, (10, 10), (520, 130), (0, 0, 0), thickness=-1)
             alpha = 0.5
             frame = cv2.addWeighted(overlay, alpha, frame, 1 - alpha, 0)
 

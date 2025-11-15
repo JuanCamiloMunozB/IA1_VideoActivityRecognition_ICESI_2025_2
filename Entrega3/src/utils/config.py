@@ -43,7 +43,7 @@ LABEL_ENCODER_PATH = MODELS_DIR / "label_encoder.joblib"
 SELECTED_FEATURES_PATH = RESULTS_DIR / "selected_features.json"
 
 # Parámetros de ventana (coherentes con preprocesamiento de Entrega2)
-# En Entrega 2 se usó WINDOW_SIZE_SEC = 1.0 s (ver features_meta.json),
+# En Entrega 2 se usó WINDOW_SIZE_SEC ≈ 1.0 s (≈30 frames),
 # así que aquí usamos 1.0 como valor por defecto para que despliegue y entrenamiento
 # estén alineados. Se puede sobreescribir vía .env si se desea experimentar.
 WINDOW_SIZE_SEC = float(os.getenv("WINDOW_SIZE_SEC", 1.0))
@@ -52,9 +52,16 @@ WINDOW_STEP_SEC = float(os.getenv("WINDOW_STEP_SEC", 0.5))
 # FPS para cálculo de ventanas (fallback si la cámara no reporta FPS)
 CAMERA_FPS_FALLBACK = float(os.getenv("CAMERA_FPS_FALLBACK", 30.0))
 
-# Umbral mínimo de confianza de landmarks (se usa SOLO para métricas/UI; el modelo
-# igualmente recibe los frames para evitar quedarse eternamente en "calentando ventana").
-VISIBILITY_MIN = float(os.getenv("VISIBILITY_MIN", 0.8))
+# Umbral mínimo de confianza de landmarks:
+# - Si la visibilidad promedio de los puntos claves es < VISIBILITY_MIN,
+#   el frame NO se usa para alimentar el modelo (para evitar ventanas vacías y NaNs).
+# Valor más laxo que 0.8 para que la ventana se llene en la práctica.
+VISIBILITY_MIN = float(os.getenv("VISIBILITY_MIN", 0.5))
+
+# Umbral de probabilidad mínima para considerar una predicción como "válida".
+# Si el modelo devuelve una prob menor a este número, la UI mostrará
+# "Sin actividad clara (baja confianza)" en lugar de fijarse en una clase aleatoria.
+MIN_PREDICTION_PROB = float(os.getenv("MIN_PREDICTION_PROB", 0.5))
 
 # Nombre "falso" de video para sesión en vivo
 LIVE_VIDEO_ID = os.getenv("LIVE_VIDEO_ID", "live_session_001")
