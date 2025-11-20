@@ -25,12 +25,12 @@ from typing import Dict, Any, Tuple, List
 from sklearn.preprocessing import StandardScaler, LabelEncoder
 from sklearn.model_selection import train_test_split, GridSearchCV, StratifiedKFold
 from sklearn.pipeline import Pipeline
-from sklearn.metrics import classification_report, confusion_matrix
+from sklearn.metrics import classification_report, confusion_matrix, f1_score, make_scorer
 from sklearn.svm import SVC
 from sklearn.ensemble import RandomForestClassifier
 from xgboost import XGBClassifier
 import matplotlib.pyplot as plt
-from sklearn.utils.class_weight import compute_sample_weight
+from sklearn.utils.class_weight import compute_sample_weight, compute_class_weight
 
 
 def _paths_from_env() -> Tuple[str, str, str]:
@@ -155,17 +155,34 @@ def train_all(
         )
         groups_train = None
 
-    # sample weights para balanceo (usado en XGB)
-    sw_train = compute_sample_weight(class_weight="balanced", y=y_train)
+    # Calcular pesos de clase personalizados que priorizan "girar"
+    # Primero calculamos los pesos balanceados normales
+    balanced_weights = compute_class_weight("balanced", classes=np.unique(y_train), y=y_train)
+    class_weight_dict = dict(zip(np.unique(y_train), balanced_weights))
+    
+    # Aumentar el peso de "girar" específicamente (2.5x más peso)
+    girar_label = None
+    for label_str in class_names:
+        if label_str == "girar":
+            girar_label = le.transform([label_str])[0]
+            break
+    
+    if girar_label is not None and girar_label in class_weight_dict:
+        # Multiplicar el peso de "girar" por 2.5 para darle más importancia
+        class_weight_dict[girar_label] = class_weight_dict[girar_label] * 2.5
+        print(f"[train_all] Peso aumentado para 'girar' (clase {girar_label}): {class_weight_dict[girar_label]:.3f}")
+    
+    # sample weights para balanceo (usado en XGB) - usar pesos personalizados
+    sw_train = compute_sample_weight(class_weight=class_weight_dict, y=y_train)
 
-    # 2) modelos + grids
+    # 2) modelos + grids - usar pesos personalizados que priorizan "girar"
     models = {
         "svm": Pipeline([
             ("scaler", StandardScaler()),
-            ("clf", SVC(probability=True, class_weight="balanced", random_state=42)),
+            ("clf", SVC(probability=True, class_weight=class_weight_dict, random_state=42)),
         ]),
         "rf": RandomForestClassifier(
-            n_estimators=300, random_state=42, n_jobs=-1, class_weight="balanced"
+            n_estimators=300, random_state=42, n_jobs=-1, class_weight=class_weight_dict
         ),
         "xgb": XGBClassifier(
             objective="multi:softprob", eval_metric="mlogloss",
@@ -206,11 +223,42 @@ def train_all(
     except Exception:
         cv = StratifiedKFold(n_splits=3, shuffle=True, random_state=42)
     reports: Dict[str, Any] = {}
+    
+    # Crear scoring personalizado que prioriza "girar"
+    def custom_scorer_girar(y_true, y_pred):
+        """
+        Scoring que combina f1_macro con f1 de "girar" (70% f1_macro + 30% f1_girar).
+        Esto prioriza mejorar la detección de "girar" sin descuidar el rendimiento general.
+        """
+        f1_macro = f1_score(y_true, y_pred, average="macro", zero_division=0)
+        
+        # Calcular f1 específico de "girar" de forma directa
+        f1_girar = 0.0
+        if girar_label is not None:
+            try:
+                from sklearn.metrics import precision_recall_fscore_support
+                # Calcular métricas binarias para la clase "girar"
+                precision, recall, f1, _ = precision_recall_fscore_support(
+                    y_true == girar_label, 
+                    y_pred == girar_label, 
+                    average='binary', 
+                    zero_division=0
+                )
+                f1_girar = float(f1) if not np.isnan(f1) else 0.0
+            except Exception:
+                pass
+        
+        # Combinar: 70% f1_macro + 30% f1_girar (prioriza "girar")
+        combined_score = 0.7 * f1_macro + 0.3 * f1_girar
+        return combined_score
+    
+    custom_scorer = make_scorer(custom_scorer_girar, greater_is_better=True)
 
     # 3) entrenar c/modelo
     for name, model in models.items():
         print(f"\n>>> Entrenando {name}…")
-        grid = GridSearchCV(model, param_grids[name], cv=cv, n_jobs=-1, scoring="f1_macro", refit=True)
+        # Usar scoring personalizado que prioriza "girar"
+        grid = GridSearchCV(model, param_grids[name], cv=cv, n_jobs=-1, scoring=custom_scorer, refit=True)
         if name == "xgb":
             if use_groups:
                 grid.fit(X_train, y_train, groups=groups_train, sample_weight=sw_train)
