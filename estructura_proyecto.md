@@ -21,10 +21,7 @@ Cada entrega se encuentra organizada dentro de su propia carpeta (`Entrega1/`, `
 
 # 🗂️ **Estructura General del Repositorio**
 
----
-
-# 🗂️ **Estructura General del Repositorio**
-
+```
 📦 proyecto-video-activity-recognition/
 │
 ├── Entrega1/
@@ -98,6 +95,7 @@ Cada entrega se encuentra organizada dentro de su propia carpeta (`Entrega1/`, `
   ├── 📜 report.md # Reporte final del proyecto
   ├── 📜 LICENSE
   └── 📜 README.md
+```
 
 # **Cómo Navegar el Repositorio**
 
