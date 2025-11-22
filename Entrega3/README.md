@@ -1,96 +1,218 @@
-# Entrega 3 – Optimización y Despliegue en Tiempo Real
+# Entrega 3 - Sistema de Reconocimiento de Actividades en Video (Video Activity Recognition)
 
-Esta entrega cubre: (1) reducción de características usando SVM, (2) optimización del modelo, (3) pruebas de despliegue y (4) interfaz en tiempo real para reconocimiento de actividad humana (HAR).
+### Selección de Características, Modelo Final SVM Reducido y Despliegue en Tiempo Real
 
-## Objetivos
+## 1\. Introducción
 
-- Optimizar el modelo SVM mediante selección de características para reducir dimensionalidad y mejorar eficiencia.
-- Implementar un sistema de inferencia en tiempo real.
-- Desarrollar una interfaz de usuario para demostración del HAR.
+En esta tercera entrega se integran todos los componentes desarrollados en el proyecto para construir un **sistema completo de reconocimiento de actividades humanas (HAR) en tiempo real**, basado en visión por computador y aprendizaje automático.
 
-## Cómo Usar
+Los avances principales incluyen:
 
-### Requisitos Previos
+- Reducción optimizada de características mediante **SelectKBest (ANOVA F-score)**.
+- Entrenamiento de un **SVM reducido con 70 características**, seleccionadas desde ~140 originales.
+- Integración del modelo reducido en un **pipeline de inferencia en tiempo real**.
+- Construcción de una **interfaz visual (UI)** con información biomecánica complementaria.
+- Despliegue multiplataforma mediante **ejecutable en Windows** y **Docker para Linux/Mac**.
 
-- Python 3.8 o superior
-- Entorno virtual activado
-- Dependencias instaladas (ver abajo)
+Este README documenta la arquitectura del sistema, la metodología empleada, los resultados obtenidos y las instrucciones de despliegue.
 
-### Instalación
+## 2\. Objetivos de la Entrega 3
 
-1. Crear y activar entorno virtual (desde la raíz del proyecto):
+- Seleccionar un subconjunto óptimo de características que maximice el rendimiento del modelo.
+- Entrenar y validar un modelo reducido que mantenga (o supere) el desempeño del modelo completo.
+- Integrar el modelo reducido en el sistema de inferencia.
+- Construir la aplicación final en tiempo real con:
+  - Predicción de actividad.
+  - Probabilidad asociada.
+  - Métricas posturales (inclinación, ángulos de rodilla).
+  - Paneles superpuestos en video.
+- Desplegar el sistema en forma de:
+  - Ejecutable (.exe) para Windows.
+  - Imagen Docker para Linux/Mac.
+- Documentar limitaciones, mejoras logradas y líneas de trabajo futuro.
 
-   ```bash
-   python -m venv venv
-   # En Windows:
-   venv\Scripts\activate
-   # En Linux/Mac:
-   source venv/bin/activate
-   ```
+## 3\. Metodología de selección de características (Entrega 3)
 
-2. Instalar dependencias:
+En el notebook 01_svm_feature_reduction.ipynb se realizó el proceso sistemático de selección de características:
 
-   ```bash
-   cd Entrega3
-   pip install -r requirements.txt
-   ```
+### 3.1. Dataset utilizado
 
-### Ejecución
+Se empleó el features.csv de la Entrega 2, que contiene:
 
-1. **Reducción de Características:**
-   - Ejecuta el notebook `notebooks/01_svm_feature_reduction.ipynb` para seleccionar las mejores características usando SVM.
+- Todas las características extraídas por ventana temporal.
+- Labels (actividades).
+- Identificadores de video para hacer particiones estratificadas.
 
-2. **Pruebas de Despliegue:**
-   - Ejecuta el notebook `notebooks/02_deployment_tests.ipynb` para verificar la carga de modelos y predicciones.
+### 3.2. Split estratificado por video (GroupShuffleSplit)
 
-3. **Demo en Tiempo Real:**
-   - Ejecuta la aplicación de interfaz:
-     ```bash
-     python src/online/ui_app.py
-     ```
-   - Esto iniciará una interfaz web para probar el reconocimiento en tiempo real usando la cámara.
+Evita leakage temporal entre frames consecutivos del mismo video.
 
-## Estructura del Directorio
+### 3.3. Entrenamiento base
 
-```
-Entrega3/
-├── docs/
-│   └── manual_usuario.md          # Manual de usuario (pendiente)
-├── experiments/
-│   ├── logs/                      # Logs de experimentos
-│   ├── models/                    # Modelos entrenados (svm_full.joblib, svm_reduced.joblib, label_encoder.joblib)
-│   └── results/                   # Resultados (feature_reduction_summary.md, selected_features.json)
-├── notebooks/
-│   ├── 01_svm_feature_reduction.ipynb  # Reducción de características
-│   └── 02_deployment_tests.ipynb       # Pruebas de despliegue
-├── src/
-│   ├── models/
-│   │   └── load_artifacts.py      # Carga de modelos y artefactos
-│   ├── online/
-│   │   ├── posture_metrics.py     # Cálculo de métricas posturales
-│   │   ├── realtime_inference.py  # Inferencia en tiempo real
-│   │   └── ui_app.py              # Aplicación de interfaz web
-│   └── utils/
-│       ├── config.py              # Configuraciones
-│       └── preprocessing.py       # Funciones de preprocesamiento
-└── requirements.txt               # Dependencias de Python
-```
+Se entrenó un SVM con todas las características para obtener una línea base.
 
-## Dependencias
+### 3.4. Selección de características
 
-- streamlit (para la interfaz web)
-- scikit-learn
-- numpy
-- pandas
-- joblib
-- opencv-python
-- mediapipe (si se usa para inferencia en tiempo real)
+Se evaluaron variantes con K en {15, 30, 60, 70, 80, 90, 100}.
 
-Ver `requirements.txt` para la lista completa.
+Cada modelo consistió en:
 
-## Resultados Esperados
+Pipeline = \[SelectKBest(f_classif, k=K) -> StandardScaler -> SVM (RBF)\]
 
-- Modelo SVM optimizado con menos características pero rendimiento similar.
-- Interfaz funcional para HAR en tiempo real.
-- Logs y resúmenes de los experimentos en `experiments/`.
+### 3.5. Resultados
 
+**Mejor modelo reducido:**
+
+- **K = 70**
+- **F1-macro = 0.887**
+- **Total de features seleccionadas:** 70
+
+Primeras 10 features más relevantes:
+
+\['knee_left_mean', 'knee_left_std', 'knee_right_mean', 'knee_right_std', 'hip_left_mean', 'hip_left_std', 'hip_right_mean', 'hip_right_std', 'inclination_std', 'vel_left_hip_mean'\]
+
+### Archivos generados
+
+- svm_reduced.joblib: mejor modelo reducido.
+- selected_features.json: lista de características seleccionadas.
+- feature_reduction_summary.md: resumen textual de resultados.
+
+## 4\. Principales descubrimientos:
+
+### Mejoras logradas gracias al muestreo correcto (cada 6 frames)
+
+- El sistema ahora replica exactamente el muestreo usado en entrenamiento.
+- **Significativa mejora** en las actividades:
+  - Sentarse
+  - Pararse
+
+### Estabilidad general
+
+- Actividades con patrones claros (caminar, caminar hacia atrás, desplazamientos) funcionan con estabilidad.
+
+### Limitaciones actuales
+
+- **Girar (rotate)** permanece como la actividad más difícil:
+  - Variabilidad rotacional alta.
+  - Baja visibilidad de landmarks en giros rápidos.
+  - Falta de features basadas en orientación y rotación axial.
+
+## 5\. Arquitectura del sistema en tiempo real
+
+El sistema está constituido por 3 componentes principales:
+
+graph LR  
+A\[Camara Input\] -->|Raw Frame| B(MediaPipe Pose)  
+B -->|33 Landmarks + Head| C{Muestreo}  
+C -->|Cada 6 frames| D\[Feature Engineering\]  
+D -->|Vector 70 features| E\[SVM Reducido\]  
+E -->|Clase + Probabilidad| F\[UI Overlay\]  
+B -->|Landmarks| G\[Calculo Metricas\]  
+G -->|Angulos/Inclinacion| F  
+
+### 5.1. Predictor temporal (realtime_inference.py)
+
+Encargado de:
+
+- Buffer temporal de frames (deque).
+- **Muestreo:** frame_sample_every = 6
+- **Cálculo del FPS efectivo:** effective_fps = fps / 6
+- Ensamblaje de ventanas temporales.
+- **Generación del vector de características vía:** frames_to_feature_vector(...)
+- **Inferencia con:**
+  - SVM reducido si existe.
+  - Fallback al SVM full si falta el reducido.
+
+**Lógica de predicción:**
+
+- Mínimo de frames requeridos para predecir: min_frames = effective_fps \* WINDOW_SIZE_SEC
+- Cuando el modelo SVM lo permite, el sistema utiliza predict_proba() para obtener probabilidades reales asociadas a cada clase. Sin embargo, algunos clasificadores SVM no implementan esta función; en esos casos solo entregan un puntaje crudo mediante decision_function(), que no es directamente interpretable como probabilidad. Para solucionar esto, se aplica una función softmax sobre esos puntajes, convirtiéndolos en valores normalizados entre 0 y 1 que se comportan como probabilidades.
+- **Salida:** (label_predicha, probabilidad)
+
+### 5.2. Métricas posturales (posture_metrics.py)
+
+Calculadas en tiempo real y mostradas en la UI para enriquecer el sistema:
+
+- trunk_inclination_deg: Inclinación del tronco respecto a la vertical.
+- knee_angle_l_deg
+- knee_angle_r_deg
+
+### 5.3. Interfaz visual (UI)
+
+La UI (ui_app.py) muestra:
+
+**Panel 1 (información del modelo)**
+
+- Variante utilizada (reduced/full).
+- FPS estimado.
+- Visibilidad media.
+- Advertencia si visibilidad < VISIBILITY_MIN.
+
+**Panel 2 (actividad)**
+
+- Actividad predicha.
+- Probabilidad asociada.
+- Código de color:
+  - Verde: confianza > 70%
+  - Amarillo: confianza 40-70%
+  - Rojo: confianza < 40%
+
+**Panel 3 (métricas posturales)**
+
+**Control de salida:**
+
+- Presiona 'q' para salir
+
+## 6\. Despliegue del sistema
+
+### 6.1. Ejecutable para Windows
+
+Construido con PyInstaller:
+
+- Script principal: app_entry.py.
+- Comando principal ejecuta: run_realtime_app(camera_index=0)
+- Manejo de errores robusto: Si falla, genera error_log.txt.
+
+### 6.2. Imagen Docker (Linux/Mac)
+
+Características del contenedor:
+
+- Basado en python:3.11-slim.
+- Incluye: OpenCV, MediaPipe, scikit-learn, Numpy, Pandas.
+- Expone la aplicación mediante: python -m Entrega3.src.online.ui_app
+- Permite ejecutar en entornos Linux sin necesidad de instalar dependencias.
+
+## 7\. Resultados en tiempo real
+
+### Actividades que funcionan muy bien
+
+- Caminar adelante / atrás
+- Movimiento lateral
+- Posturas estáticas
+- Pararse / sentarse (mejorado en Entrega 3)
+
+### Actividades con desempeño moderado
+
+- Girar (por poca visibilidad y falta de features especializadas)
+
+### Métricas reportadas en UI
+
+- Inclinación del tronco (grados)
+- Angulo de rodilla izquierda (grados)
+- Angulo de rodilla derecha (grados)
+- Probabilidad de la actividad
+
+### Estabilidad
+
+- La inferencia es fluida gracias al muestreo reducido.
+- El pipeline es consistente con el entrenamiento (principal mejora).
+
+## 8\. Limitaciones
+
+### Limitaciones
+
+- Actividad "girar" sigue siendo la de menor precisión.
+- El sistema depende fuertemente de la visibilidad:
+  - Luz adecuada.
+  - Ausencia de oclusiones.
+  - Distancia óptima de la cámara.
