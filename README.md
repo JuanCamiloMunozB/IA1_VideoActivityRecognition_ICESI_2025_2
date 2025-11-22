@@ -19,6 +19,9 @@ Este proyecto hace parte del curso **Inteligencia Artificial 1** de la carrera d
 | [Martín Gómez](https://github.com/Electromayonaise)     |
 | [Juan Camilo Muñoz](https://github.com/JuanCamiloMunozB) |
 
+## Contacto
+
+- Si tienes preguntas o estás interesado en contribuir, no dudes en contactar al líder del equipo.
 
 ## Introducción / Objetivo del Proyecto
 
@@ -158,7 +161,7 @@ Para instrucciones detalladas, consulta [Entrega2/README.md](Entrega2/README.md)
    python Entrega3/src/online/ui_app.py
    ```  
 
-Para instrucciones detalladas, consulta [Entrega3/docs/manual_usuario.md](Entrega3/docs/manual_usuario.md)
+Para instrucciones detalladas, consulta [Entrega3/README.md](Entrega3/README.md)
 
 ## Entregables / Análisis Destacados
 
@@ -180,6 +183,7 @@ Para instrucciones detalladas, consulta [Entrega3/docs/manual_usuario.md](Entreg
 
 ### Entrega 3 (Semana 17)
 
+- [README de Entrega 3](Entrega3/README.md): Optimización y despliegue en tiempo real  
 - [Manual de Usuario](Entrega3/docs/manual_usuario.md): Guía para el uso del sistema en tiempo real  
 - [Notebook Reducción de Características](Entrega3/notebooks/01_svm_feature_reduction.ipynb): Selección de características usando SVM  
 - [Notebook Pruebas de Despliegue](Entrega3/notebooks/02_deployment_tests.ipynb): Verificación de carga de modelos y predicciones en tiempo real  
